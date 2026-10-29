@@ -1,0 +1,312 @@
+// Prisma Schema for QR Restaurant Ordering SaaS
+// Source of truth: PROJECT_BRIEF.md
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ----------------------------------------------------
+// Enums
+// ----------------------------------------------------
+
+enum UserRole {
+  OWNER
+  MANAGER
+  KITCHEN
+  WAITER
+  CASHIER
+}
+
+enum OrderStatus {
+  PENDING
+  ACCEPTED
+  PREPARING
+  READY
+  SERVED
+  CANCELLED
+}
+
+enum PaymentStatus {
+  UNPAID
+  PENDING
+  PAID
+  FAILED
+  REFUNDED
+}
+
+enum PaymentMethod {
+  ONLINE
+  COUNTER
+}
+
+enum TableStatus {
+  AVAILABLE
+  OCCUPIED
+  RESERVED
+  INACTIVE
+}
+
+// ----------------------------------------------------
+// Models
+// ----------------------------------------------------
+
+model User {
+  id           String   @id @default(uuid())
+  email        String   @unique
+  passwordHash String
+  fullName     String
+  phone        String?
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  memberships        RestaurantMembership[]
+  orderStatusUpdates OrderStatusHistory[]
+
+  @@map("users")
+}
+
+model Restaurant {
+  id          String   @id @default(uuid())
+  name        String
+  slug        String   @unique
+  description String?
+  address     String?
+  phone       String?
+  currency    String   @default("INR")
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  memberships RestaurantMembership[]
+  categories  MenuCategory[]
+  menuItems   MenuItem[]
+  tables      RestaurantTable[]
+  qrTokens    TableQrToken[]
+  sessions    TableSession[]
+  orders      Order[]
+  payments    Payment[]
+
+  @@map("restaurants")
+}
+
+model RestaurantMembership {
+  id           String   @id @default(uuid())
+  userId       String
+  restaurantId String
+  role         UserRole @default(MANAGER)
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  restaurant Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, restaurantId])
+  @@index([restaurantId, role])
+  @@map("restaurant_memberships")
+}
+
+model MenuCategory {
+  id           String   @id @default(uuid())
+  restaurantId String
+  name         String
+  description  String?
+  sortOrder    Int      @default(0)
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  restaurant Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  menuItems  MenuItem[]
+
+  @@unique([restaurantId, name])
+  @@index([restaurantId, isActive])
+  @@map("menu_categories")
+}
+
+model MenuItem {
+  id           String   @id @default(uuid())
+  restaurantId String
+  categoryId   String
+  name         String
+  description  String?
+  price        Int // Stored in minor currency units (e.g. paise)
+  imageUrl     String?
+  isAvailable  Boolean  @default(true)
+  sortOrder    Int      @default(0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  restaurant Restaurant   @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  category   MenuCategory @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  orderItems OrderItem[]
+
+  @@index([restaurantId, isAvailable])
+  @@index([categoryId])
+  @@map("menu_items")
+}
+
+model RestaurantTable {
+  id           String      @id @default(uuid())
+  restaurantId String
+  tableNumber  String
+  capacity     Int         @default(4)
+  status       TableStatus @default(AVAILABLE)
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+
+  restaurant Restaurant     @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  qrTokens   TableQrToken[]
+  sessions   TableSession[]
+  orders     Order[]
+
+  @@unique([restaurantId, tableNumber])
+  @@index([restaurantId, status])
+  @@map("restaurant_tables")
+}
+
+model TableQrToken {
+  id           String    @id @default(uuid())
+  restaurantId String
+  tableId      String
+  tokenHash    String    @unique
+  isRevoked    Boolean   @default(false)
+  revokedAt    DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  restaurant Restaurant      @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  table      RestaurantTable @relation(fields: [tableId], references: [id], onDelete: Cascade)
+
+  @@index([restaurantId, tableId])
+  @@index([tokenHash, isRevoked])
+  @@map("table_qr_tokens")
+}
+
+model TableSession {
+  id               String   @id @default(uuid())
+  restaurantId     String
+  tableId          String
+  sessionTokenHash String   @unique
+  expiresAt        DateTime
+  isActive         Boolean  @default(true)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  restaurant Restaurant      @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  table      RestaurantTable @relation(fields: [tableId], references: [id], onDelete: Cascade)
+  orders     Order[]
+
+  @@index([restaurantId, tableId, isActive])
+  @@map("table_sessions")
+}
+
+model Order {
+  id             String        @id @default(uuid())
+  restaurantId   String
+  tableId        String
+  sessionId      String?
+  orderNumber    String
+  orderStatus    OrderStatus   @default(PENDING)
+  paymentStatus  PaymentStatus @default(UNPAID)
+  paymentMethod  PaymentMethod
+  subtotal       Int // in minor units
+  tax            Int           @default(0) // in minor units
+  total          Int // in minor units
+  notes          String?
+  idempotencyKey String?       @unique
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  restaurant    Restaurant           @relation(fields: [restaurantId], references: [id], onDelete: Restrict)
+  table         RestaurantTable      @relation(fields: [tableId], references: [id], onDelete: Restrict)
+  session       TableSession?        @relation(fields: [sessionId], references: [id], onDelete: SetNull)
+  items         OrderItem[]
+  payments      Payment[]
+  statusHistory OrderStatusHistory[]
+
+  @@unique([restaurantId, orderNumber])
+  @@index([restaurantId, orderStatus])
+  @@index([restaurantId, createdAt])
+  @@map("orders")
+}
+
+model OrderItem {
+  id            String   @id @default(uuid())
+  orderId       String
+  menuItemId    String?
+  nameSnapshot  String
+  priceSnapshot Int // minor units
+  quantity      Int
+  totalPrice    Int // minor units
+  notes         String?
+  createdAt     DateTime @default(now())
+
+  order    Order     @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  menuItem MenuItem? @relation(fields: [menuItemId], references: [id], onDelete: SetNull)
+
+  @@index([orderId])
+  @@map("order_items")
+}
+
+model Payment {
+  id                   String        @id @default(uuid())
+  restaurantId         String
+  orderId              String
+  amount               Int // minor units
+  currency             String        @default("INR")
+  method               PaymentMethod
+  status               PaymentStatus @default(PENDING)
+  gatewayProvider      String?
+  gatewayTransactionId String?
+  gatewayOrderId       String?
+  paidAt               DateTime?
+  createdAt            DateTime      @default(now())
+  updatedAt            DateTime      @updatedAt
+
+  restaurant Restaurant     @relation(fields: [restaurantId], references: [id], onDelete: Restrict)
+  order      Order          @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  events     PaymentEvent[]
+
+  @@index([restaurantId, status])
+  @@index([orderId])
+  @@map("payments")
+}
+
+model PaymentEvent {
+  id          String   @id @default(uuid())
+  paymentId   String?
+  provider    String
+  eventId     String   @unique
+  eventType   String
+  payload     Json
+  processedAt DateTime @default(now())
+
+  payment Payment? @relation(fields: [paymentId], references: [id], onDelete: SetNull)
+
+  @@index([provider, eventId])
+  @@map("payment_events")
+}
+
+model OrderStatusHistory {
+  id              String       @id @default(uuid())
+  orderId         String
+  fromStatus      OrderStatus?
+  toStatus        OrderStatus
+  changedByUserId String?
+  note            String?
+  createdAt       DateTime     @default(now())
+
+  order         Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  changedByUser User? @relation(fields: [changedByUserId], references: [id], onDelete: SetNull)
+
+  @@index([orderId])
+  @@map("order_status_history")
+}
