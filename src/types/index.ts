@@ -20,10 +20,13 @@ export enum OrderStatus {
   CANCELLED = 'CANCELLED',
 }
 
+export { OrderItemStatus } from '@/generated/prisma';
+
 export enum PaymentStatus {
   UNPAID = 'UNPAID',
   PENDING = 'PENDING',
   PAID = 'PAID',
+  PARTIALLY_REFUNDED = 'PARTIALLY_REFUNDED',
   FAILED = 'FAILED',
   REFUNDED = 'REFUNDED',
 }

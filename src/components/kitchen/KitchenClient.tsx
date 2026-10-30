@@ -8,6 +8,7 @@ import type { StaffOrderDetails } from '@/types/orders';
 
 import { KitchenHeader } from '@/components/kitchen/KitchenHeader';
 import { KitchenOrderCard } from '@/components/kitchen/KitchenOrderCard';
+import { CancelItemModal, type CancellationReason } from '@/components/kitchen/CancelItemModal';
 
 interface KitchenClientProps {
   initialRestaurants: RestaurantSummary[];
@@ -28,6 +29,17 @@ export function KitchenClient({
   const [actionLoading, setActionLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [activeFilter, setActiveFilter] = useState<'active' | 'ready' | 'all'>('active');
+  const [cancelModalState, setCancelModalState] = useState<{
+    isOpen: boolean;
+    orderId: string;
+    orderNumber: string;
+    item: { id: string; nameSnapshot: string; quantity: number } | null;
+  }>({
+    isOpen: false,
+    orderId: '',
+    orderNumber: '',
+    item: null,
+  });
 
   const fetchOrders = useCallback(async () => {
     if (!activeRestaurant) return;
@@ -108,6 +120,31 @@ export function KitchenClient({
     }
   }
 
+  async function handleConfirmCancelItem(reason: CancellationReason, note?: string) {
+    if (!activeRestaurant || !cancelModalState.item) return;
+
+    setActionLoading(true);
+    try {
+      const res = await fetch(
+        `/api/v1/restaurants/${activeRestaurant.id}/orders/${cancelModalState.orderId}/items/${cancelModalState.item.id}/cancel`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ reason, note }),
+        },
+      );
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.error?.message || 'Failed to cancel order item.');
+      }
+      await fetchOrders();
+    } catch (err) {
+      alert((err as Error).message);
+    } finally {
+      setActionLoading(false);
+    }
+  }
+
   const activeOrders = orders.filter((o) =>
     [OrderStatus.PENDING, OrderStatus.ACCEPTED, OrderStatus.PREPARING].includes(
       o.orderStatus,
@@ -168,11 +205,35 @@ export function KitchenClient({
                 actionLoading={actionLoading}
                 onUpdateStatus={handleUpdateStatus}
                 onCancelOrder={handleCancelOrder}
+                onRequestCancelItem={(orderId, orderNumber, item) =>
+                  setCancelModalState({
+                    isOpen: true,
+                    orderId,
+                    orderNumber,
+                    item,
+                  })
+                }
               />
             ))}
           </div>
         )}
       </main>
+
+      <CancelItemModal
+        isOpen={cancelModalState.isOpen}
+        orderNumber={cancelModalState.orderNumber}
+        item={cancelModalState.item}
+        isLoading={actionLoading}
+        onClose={() =>
+          setCancelModalState({
+            isOpen: false,
+            orderId: '',
+            orderNumber: '',
+            item: null,
+          })
+        }
+        onConfirm={handleConfirmCancelItem}
+      />
     </div>
   );
 }

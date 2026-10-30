@@ -135,6 +135,32 @@ export function OrdersTab({ restaurantId, currency = 'INR', onNotify }: OrdersTa
     }
   }
 
+  async function handleRefundCounter(orderId: string) {
+    setActionLoading(true);
+    try {
+      const res = await fetch(
+        `/api/v1/restaurants/${restaurantId}/orders/${orderId}/refund-counter`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+        },
+      );
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.error?.message || 'Failed to complete counter refund.');
+      }
+      onNotify('success', 'Counter refund confirmed successfully.');
+      await fetchOrders();
+      if (selectedOrder && selectedOrder.id === orderId) {
+        setSelectedOrder(data.data.order);
+      }
+    } catch (err) {
+      onNotify('error', (err as Error).message);
+    } finally {
+      setActionLoading(false);
+    }
+  }
+
   const filteredOrders = orders.filter((o) => {
     if (!searchQuery.trim()) return true;
     const q = searchQuery.toLowerCase();
@@ -172,6 +198,7 @@ export function OrdersTab({ restaurantId, currency = 'INR', onNotify }: OrdersTa
         onUpdateStatus={handleUpdateStatus}
         onCancelOrder={handleCancelOrder}
         onSettleCounter={handleSettleCounter}
+        onRefundCounter={handleRefundCounter}
       />
     </div>
   );

@@ -174,6 +174,9 @@ export function OrderTrackingView({
           tax={order.tax}
           total={order.total}
           currency={order.restaurant.currency}
+          refundAmount={order.refundAmount}
+          refundedAtCounterAmount={order.refundedAtCounterAmount}
+          refundStatus={order.refundStatus}
         />
 
         {/* Cancel Order Action */}

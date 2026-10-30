@@ -3,20 +3,17 @@
 import React from 'react';
 import {
   X,
-  Clock,
   CheckCircle2,
   ChefHat,
   BellRing,
   UtensilsCrossed,
-  XCircle,
-  Loader2,
-  AlertTriangle,
   History,
   CreditCard,
 } from 'lucide-react';
 import { OrderStatus } from '@/types';
 import type { StaffOrderDetails } from '@/types/orders';
 import { formatMoney } from '@/lib/formatters';
+import { OrderCounterRefundCard } from './OrderCounterRefundCard';
 
 interface OrderDetailModalProps {
   isOpen: boolean;
@@ -27,6 +24,7 @@ interface OrderDetailModalProps {
   onUpdateStatus: (orderId: string, status: OrderStatus) => Promise<void>;
   onCancelOrder: (orderId: string) => Promise<void>;
   onSettleCounter?: (orderId: string, amount: number) => Promise<void>;
+  onRefundCounter?: (orderId: string) => Promise<void>;
 }
 
 export function OrderDetailModal({
@@ -38,6 +36,7 @@ export function OrderDetailModal({
   onUpdateStatus,
   onCancelOrder,
   onSettleCounter,
+  onRefundCounter,
 }: OrderDetailModalProps) {
   if (!isOpen || !order) return null;
 
@@ -119,35 +118,63 @@ export function OrderDetailModal({
           </h4>
 
           <div className="divide-y divide-slate-800/80 rounded-2xl bg-slate-900/60 border border-slate-800 p-4">
-            {order.items.map((item) => (
-              <div key={item.id} className="py-2.5 flex items-start justify-between gap-3 text-xs">
-                <div className="flex-1">
-                  <span className="font-bold text-white">
-                    {item.quantity}x {item.nameSnapshot}
+            {order.items.map((item) => {
+              const isCancelled = item.status === 'CANCELLED';
+              return (
+                <div
+                  key={item.id}
+                  className={`py-2.5 flex items-start justify-between gap-3 text-xs ${
+                    isCancelled ? 'opacity-65' : ''
+                  }`}
+                >
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2">
+                      <span className={`font-bold ${isCancelled ? 'line-through text-slate-400' : 'text-white'}`}>
+                        {item.quantity}x {item.nameSnapshot}
+                      </span>
+                      {isCancelled && (
+                        <span className="px-1.5 py-0.5 rounded bg-red-950/80 text-red-300 border border-red-800 text-[10px] font-bold">
+                          Cancelled
+                        </span>
+                      )}
+                    </div>
+                    <span className="text-slate-400">
+                      ({formatMoney(item.priceSnapshot, currency)} each)
+                    </span>
+                    {item.notes && !isCancelled && (
+                      <p className="text-[11px] text-amber-400/90 font-medium italic mt-0.5">
+                        Prep Note: {item.notes}
+                      </p>
+                    )}
+                    {isCancelled && item.cancelReason && (
+                      <p className="text-[11px] text-red-400/90 font-medium italic mt-0.5">
+                        Reason: {item.cancelReason} {item.cancelNote ? `(${item.cancelNote})` : ''}
+                      </p>
+                    )}
+                  </div>
+                  <span className={`font-mono font-bold ${isCancelled ? 'line-through text-slate-500' : 'text-slate-200'}`}>
+                    {formatMoney(item.totalPrice, currency)}
                   </span>
-                  <span className="text-slate-400 ml-2">
-                    ({formatMoney(item.priceSnapshot, currency)} each)
-                  </span>
-                  {item.notes && (
-                    <p className="text-[11px] text-amber-400/90 font-medium italic mt-0.5">
-                      Prep Note: {item.notes}
-                    </p>
-                  )}
                 </div>
-                <span className="font-mono font-bold text-slate-200">
-                  {formatMoney(item.totalPrice, currency)}
-                </span>
-              </div>
-            ))}
+              );
+            })}
 
             <div className="pt-3 mt-2 flex items-center justify-between text-sm font-bold text-white border-t border-slate-800">
-              <span>Total Amount</span>
+              <span>Payable Total</span>
               <span className="font-mono text-orange-400 text-base">
                 {formatMoney(order.total, currency)}
               </span>
             </div>
           </div>
         </div>
+
+        {/* Counter Refund Card */}
+        <OrderCounterRefundCard
+          order={order}
+          currency={currency}
+          actionLoading={actionLoading}
+          onRefundCounter={onRefundCounter}
+        />
 
         {order.notes && (
           <div className="p-3.5 rounded-xl bg-slate-900 border border-slate-800 text-xs">

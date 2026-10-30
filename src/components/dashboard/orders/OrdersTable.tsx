@@ -75,15 +75,27 @@ export function OrdersTable({
                 {formatMoney(ord.total, currency)}
               </td>
               <td className="py-3.5 px-4">
-                <span
-                  className={`px-2 py-0.5 rounded text-[10px] font-semibold ${
-                    ord.paymentStatus === 'PAID'
-                      ? 'bg-emerald-950/60 text-emerald-400 border border-emerald-800'
-                      : 'bg-amber-950/60 text-amber-400 border border-amber-800'
-                  }`}
-                >
-                  {ord.paymentStatus}
-                </span>
+                <div className="flex flex-col gap-1 items-start">
+                  <span
+                    className={`px-2 py-0.5 rounded text-[10px] font-semibold ${
+                      ord.paymentStatus === 'PAID'
+                        ? 'bg-emerald-950/60 text-emerald-400 border border-emerald-800'
+                        : 'bg-amber-950/60 text-amber-400 border border-amber-800'
+                    }`}
+                  >
+                    {ord.paymentStatus}
+                  </span>
+                  {ord.refundStatus === 'PENDING_COUNTER_REFUND' && (
+                    <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-rose-950/80 text-rose-300 border border-rose-800 animate-pulse whitespace-nowrap">
+                      Refund Pending
+                    </span>
+                  )}
+                  {ord.refundStatus === 'REFUNDED_AT_COUNTER' && (
+                    <span className="px-1.5 py-0.5 rounded text-[9px] font-semibold bg-emerald-950/60 text-emerald-300 border border-emerald-800 whitespace-nowrap">
+                      Refunded
+                    </span>
+                  )}
+                </div>
               </td>
               <td className="py-3.5 px-4">
                 <span

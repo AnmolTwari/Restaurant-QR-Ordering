@@ -1,4 +1,6 @@
-import { OrderStatus, PaymentStatus, PaymentMethod } from './index';
+import { OrderStatus, OrderItemStatus, PaymentStatus, PaymentMethod } from './index';
+
+export { OrderItemStatus };
 
 export interface CartItem {
   menuItemId: string;
@@ -31,6 +33,11 @@ export interface OrderItemSnapshot {
   quantity: number;
   totalPrice: number; // in minor units
   notes: string | null;
+  status: OrderItemStatus;
+  cancelReason?: string | null;
+  cancelNote?: string | null;
+  cancelledAt?: string | null;
+  cancelledByUserId?: string | null;
 }
 
 export interface OrderStatusHistoryItem {
@@ -52,6 +59,11 @@ export interface PublicOrderTracking {
   subtotal: number;
   tax: number;
   total: number;
+  refundAmount?: number;
+  refundedAtCounterAmount?: number;
+  refundStatus?: string | null;
+  refundCompletedAt?: string | null;
+  refundCompletedByUserId?: string | null;
   notes: string | null;
   createdAt: string;
   table: {
@@ -71,6 +83,9 @@ export interface PublicOrderTracking {
     quantity: number;
     totalPrice: number;
     notes: string | null;
+    status: OrderItemStatus;
+    cancelReason?: string | null;
+    cancelNote?: string | null;
   }>;
   statusHistory: Array<{
     id: string;
@@ -93,6 +108,11 @@ export interface StaffOrderDetails {
   subtotal: number;
   tax: number;
   total: number;
+  refundAmount?: number;
+  refundedAtCounterAmount?: number;
+  refundStatus?: string | null;
+  refundCompletedAt?: string | null;
+  refundCompletedByUserId?: string | null;
   notes: string | null;
   idempotencyKey: string | null;
   createdAt: string;

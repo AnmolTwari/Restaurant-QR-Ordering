@@ -1,15 +1,22 @@
 'use client';
 
 import React from 'react';
-import { UtensilsCrossed, MapPin, Phone } from 'lucide-react';
+import { UtensilsCrossed, MapPin, Phone, Receipt } from 'lucide-react';
 import type { PublicMenuData } from '@/types/public-menu';
 
 interface MenuHeaderProps {
   restaurant: PublicMenuData['restaurant'];
   table: PublicMenuData['table'];
+  onOpenOrders?: () => void;
+  ordersCount?: number;
 }
 
-export function MenuHeader({ restaurant, table }: MenuHeaderProps) {
+export function MenuHeader({
+  restaurant,
+  table,
+  onOpenOrders,
+  ordersCount = 0,
+}: MenuHeaderProps) {
   return (
     <header className="relative bg-gradient-to-b from-slate-900 via-slate-900/90 to-slate-950 border-b border-slate-800/80 px-4 pt-8 pb-6">
       <div className="max-w-2xl mx-auto">
@@ -19,10 +26,29 @@ export function MenuHeader({ restaurant, table }: MenuHeaderProps) {
             <span>Dine-In Menu</span>
           </div>
 
-          {/* Table Badge */}
-          <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-slate-800 border border-slate-700 text-xs font-bold text-white shadow-sm">
-            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-            <span>Table {table.tableNumber}</span>
+          <div className="flex items-center gap-2">
+            {onOpenOrders && (
+              <button
+                type="button"
+                onClick={onOpenOrders}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-slate-800/90 hover:bg-slate-700 border border-slate-700 text-xs font-bold text-orange-400 shadow-sm transition-colors"
+                title="View active table orders"
+              >
+                <Receipt className="w-3.5 h-3.5 text-orange-400" />
+                <span>My Orders</span>
+                {ordersCount > 0 && (
+                  <span className="ml-1 px-1.5 py-0.2 rounded-full bg-orange-500 text-white text-[10px] font-extrabold">
+                    {ordersCount}
+                  </span>
+                )}
+              </button>
+            )}
+
+            {/* Table Badge */}
+            <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-slate-800 border border-slate-700 text-xs font-bold text-white shadow-sm">
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+              <span>Table {table.tableNumber}</span>
+            </div>
           </div>
         </div>
 

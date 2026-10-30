@@ -32,10 +32,16 @@ enum OrderStatus {
   CANCELLED
 }
 
+enum OrderItemStatus {
+  ACTIVE
+  CANCELLED
+}
+
 enum PaymentStatus {
   UNPAID
   PENDING
   PAID
+  PARTIALLY_REFUNDED
   FAILED
   REFUNDED
 }
@@ -68,6 +74,8 @@ model User {
 
   memberships        RestaurantMembership[]
   orderStatusUpdates OrderStatusHistory[]
+  cancelledOrderItems OrderItem[] @relation("CancelledOrderItems")
+  completedOrderRefunds Order[]   @relation("CompletedOrderRefunds")
 
   @@map("users")
 }
@@ -220,14 +228,20 @@ model Order {
   subtotal       Int // in minor units
   tax            Int           @default(0) // in minor units
   total          Int // in minor units
-  notes          String?
-  idempotencyKey String?       @unique
-  createdAt      DateTime      @default(now())
-  updatedAt      DateTime      @updatedAt
+  refundAmount            Int           @default(0) // in minor units
+  refundedAtCounterAmount Int           @default(0) // in minor units
+  refundStatus            String?
+  refundCompletedAt       DateTime?
+  refundCompletedByUserId String?
+  notes                   String?
+  idempotencyKey          String?       @unique
+  createdAt               DateTime      @default(now())
+  updatedAt               DateTime      @updatedAt
 
-  restaurant    Restaurant           @relation(fields: [restaurantId], references: [id], onDelete: Restrict)
-  table         RestaurantTable      @relation(fields: [tableId], references: [id], onDelete: Restrict)
-  session       TableSession?        @relation(fields: [sessionId], references: [id], onDelete: SetNull)
+  restaurant            Restaurant           @relation(fields: [restaurantId], references: [id], onDelete: Restrict)
+  table                 RestaurantTable      @relation(fields: [tableId], references: [id], onDelete: Restrict)
+  session               TableSession?        @relation(fields: [sessionId], references: [id], onDelete: SetNull)
+  refundCompletedByUser User?                @relation("CompletedOrderRefunds", fields: [refundCompletedByUserId], references: [id], onDelete: SetNull)
   items         OrderItem[]
   payments      Payment[]
   statusHistory OrderStatusHistory[]
@@ -239,20 +253,27 @@ model Order {
 }
 
 model OrderItem {
-  id            String   @id @default(uuid())
-  orderId       String
-  menuItemId    String?
-  nameSnapshot  String
-  priceSnapshot Int // minor units
-  quantity      Int
-  totalPrice    Int // minor units
-  notes         String?
-  createdAt     DateTime @default(now())
+  id                String          @id @default(uuid())
+  orderId           String
+  menuItemId        String?
+  nameSnapshot      String
+  priceSnapshot     Int // minor units
+  quantity          Int
+  totalPrice        Int // minor units
+  notes             String?
+  status            OrderItemStatus @default(ACTIVE)
+  cancelReason      String?
+  cancelNote        String?
+  cancelledAt       DateTime?
+  cancelledByUserId String?
+  createdAt         DateTime        @default(now())
 
-  order    Order     @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  menuItem MenuItem? @relation(fields: [menuItemId], references: [id], onDelete: SetNull)
+  order           Order     @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  menuItem        MenuItem? @relation(fields: [menuItemId], references: [id], onDelete: SetNull)
+  cancelledByUser User?     @relation("CancelledOrderItems", fields: [cancelledByUserId], references: [id], onDelete: SetNull)
 
   @@index([orderId])
+  @@index([orderId, status])
   @@map("order_items")
 }
 
@@ -261,12 +282,15 @@ model Payment {
   restaurantId         String
   orderId              String
   amount               Int // minor units
+  refundAmount         Int           @default(0) // minor units
   currency             String        @default("INR")
   method               PaymentMethod
   status               PaymentStatus @default(PENDING)
+  refundStatus         String?
   gatewayProvider      String?
   gatewayTransactionId String?
   gatewayOrderId       String?
+  gatewayRefundId      String?
   paidAt               DateTime?
   createdAt            DateTime      @default(now())
   updatedAt            DateTime      @updatedAt

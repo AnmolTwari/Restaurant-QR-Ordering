@@ -440,8 +440,224 @@ async function runE2EVerification() {
   }
   console.log(`✓ Online receipt generated: Payment Status = ${receipt2Data.data.receipt.order.paymentStatus} (${receipt2Data.data.receipt.payment?.method})`);
 
+  // 16. Feature A: Customer lists all table session orders and reopens tracking
+  console.log('\n[Step 15] Customer fetches active table session orders (Feature A)...');
+  const sessionOrdersRes = await fetch(`${BASE_URL}/api/v1/public/orders?restaurantSlug=${restaurantSlug}`, {
+    headers: { Cookie: tableSessionCookie },
+  });
+  const sessionOrdersData = await sessionOrdersRes.json();
+  if (!sessionOrdersRes.ok || !sessionOrdersData.success) {
+    throw new Error(`Failed to list session orders: ${JSON.stringify(sessionOrdersData)}`);
+  }
+  const sessionOrders = sessionOrdersData.data.orders;
+  console.log(`✓ Retrieved ${sessionOrders.length} orders for current table session.`);
+  const hasOrder1 = sessionOrders.some((o: any) => o.orderNumber === orderNumber);
+  const hasOrder2 = sessionOrders.some((o: any) => o.orderNumber === order2Number);
+  if (!hasOrder1 || !hasOrder2) {
+    throw new Error('Expected both placed orders to be listed in the active table session.');
+  }
+  console.log(`✓ Customer successfully verified both #${orderNumber} and #${order2Number} in table session history.`);
+
+  // 17. Feature B: Kitchen item-level cancellation
+  console.log('\n[Step 16] Testing kitchen item-level cancellation (Feature B)...');
+  // Create an extra item in the menu to test multi-item order cancellation
+  const item2Res = await fetch(`${BASE_URL}/api/v1/restaurants/${restaurantId}/menu-items`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Cookie: authCookie,
+    },
+    body: JSON.stringify({
+      categoryId,
+      name: 'Garlic Herb Bread',
+      description: 'Toasted baguette with fresh garlic butter',
+      price: 25000, // ₹250.00
+      isAvailable: true,
+      sortOrder: 2,
+    }),
+  });
+  const item2Data = await item2Res.json();
+  const menuItem2Id = item2Data.data.menuItem.id;
+
+  // Place Order 3 with 2 items: Pizza (₹650) + Garlic Bread (₹250) = ₹900
+  const order3Res = await fetch(`${BASE_URL}/api/v1/public/orders`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Cookie: tableSessionCookie,
+    },
+    body: JSON.stringify({
+      restaurantSlug,
+      idempotencyKey: `idem_p7_${Date.now()}`,
+      items: [
+        { menuItemId, quantity: 1 },
+        { menuItemId: menuItem2Id, quantity: 1 },
+      ],
+    }),
+  });
+  const order3Data = await order3Res.json();
+  const order3 = order3Data.data.order;
+  console.log(`✓ Multi-item Order 3 placed: #${order3.orderNumber} (Total: ₹${(order3.total / 100).toFixed(2)})`);
+
+  const pizzaItem = order3.items.find((i: any) => i.menuItemId === menuItemId);
+  const breadItem = order3.items.find((i: any) => i.menuItemId === menuItem2Id);
+
+  // Kitchen cancels Garlic Bread
+  console.log(`  Cancelling 1 item ("Garlic Herb Bread") from kitchen...`);
+  const cancelItemRes = await fetch(
+    `${BASE_URL}/api/v1/restaurants/${restaurantId}/orders/${order3.id}/items/${breadItem.id}/cancel`,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Cookie: authCookie,
+      },
+      body: JSON.stringify({
+        reason: 'Ingredient out of stock',
+        note: 'Fresh garlic stock depleted',
+      }),
+    },
+  );
+  const cancelItemData = await cancelItemRes.json();
+  if (!cancelItemRes.ok || !cancelItemData.success) {
+    throw new Error(`Kitchen item cancel failed: ${JSON.stringify(cancelItemData)}`);
+  }
+  console.log(`✓ Item "${cancelItemData.data.cancelledItem.name}" cancelled successfully!`);
+  console.log(`✓ Recalculated Order Total: ₹${(cancelItemData.data.order.total / 100).toFixed(2)} (Previous: ₹900.00)`);
+  if (cancelItemData.data.order.total !== 65000) {
+    throw new Error(`Expected new total to be ₹650.00 (65000 minor units), got: ${cancelItemData.data.order.total}`);
+  }
+
+  // Customer checks order status: item is shown as CANCELLED with reason
+  const custTrackingRes = await fetch(`${BASE_URL}/api/v1/public/orders/${order3.orderNumber}`, {
+    headers: { Cookie: tableSessionCookie },
+  });
+  const custTrackingData = await custTrackingRes.json();
+  const trackedCancelledItem = custTrackingData.data.order.items.find((i: any) => i.id === breadItem.id);
+  if (trackedCancelledItem?.status !== 'CANCELLED') {
+    throw new Error(`Expected customer tracking to reflect CANCELLED item status.`);
+  }
+  console.log(`✓ Customer tracking verifies item status is CANCELLED (Reason: "${trackedCancelledItem.cancelReason}")`);
+
+  // Kitchen cancels remaining pizza -> order becomes CANCELLED
+  console.log(`  Kitchen cancels remaining item ("Truffle Burrata Pizza")...`);
+  const cancelLastItemRes = await fetch(
+    `${BASE_URL}/api/v1/restaurants/${restaurantId}/orders/${order3.id}/items/${pizzaItem.id}/cancel`,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Cookie: authCookie,
+      },
+      body: JSON.stringify({
+        reason: 'Item unavailable',
+      }),
+    },
+  );
+  const cancelLastData = await cancelLastItemRes.json();
+  if (!cancelLastItemRes.ok || cancelLastData.data.order.orderStatus !== 'CANCELLED') {
+    throw new Error(`Expected entire order to transition to CANCELLED when all items are cancelled.`);
+  }
+  console.log(`✓ All items cancelled. Entire order #${order3.orderNumber} successfully transitioned to CANCELLED!`);
+
+  console.log('\n--- Step 17: Paid Order Item Cancellation & Counter Refund Workflow ---');
+  // Place Order 4 with 2 items
+  const order4Res = await fetch(`${BASE_URL}/api/v1/public/orders`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Cookie: tableSessionCookie,
+    },
+    body: JSON.stringify({
+      restaurantSlug,
+      idempotencyKey: `idem_p7_paid_${Date.now()}`,
+      items: [
+        { menuItemId, quantity: 1 },
+        { menuItemId: menuItem2Id, quantity: 1 },
+      ],
+    }),
+  });
+  const order4Data = await order4Res.json();
+  const order4 = order4Data.data.order;
+  console.log(`✓ Paid Test Order 4 placed: #${order4.orderNumber} (Total: ₹${(order4.total / 100).toFixed(2)})`);
+
+  // Cashier settles payment at counter -> PAID
+  const settlePaidRes = await fetch(`${BASE_URL}/api/v1/restaurants/${restaurantId}/orders/${order4.id}/settle-counter`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Cookie: authCookie,
+    },
+    body: JSON.stringify({ amount: order4.total }),
+  });
+  const settlePaidData = await settlePaidRes.json();
+  if (!settlePaidRes.ok || !settlePaidData.success) {
+    throw new Error(`Failed to settle order 4 payment: ${JSON.stringify(settlePaidData)}`);
+  }
+  console.log(`✓ Order 4 payment settled at counter (PAID)`);
+
+  const order4BreadItem = order4.items.find((i: any) => i.menuItemId === menuItem2Id);
+
+  // Kitchen cancels Garlic Bread (₹250)
+  const cancelPaidItemRes = await fetch(
+    `${BASE_URL}/api/v1/restaurants/${restaurantId}/orders/${order4.id}/items/${order4BreadItem.id}/cancel`,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Cookie: authCookie,
+      },
+      body: JSON.stringify({
+        reason: 'Out of stock',
+        note: 'Kitchen ran out of bread',
+      }),
+    },
+  );
+  const cancelPaidItemData = await cancelPaidItemRes.json();
+  if (!cancelPaidItemRes.ok || !cancelPaidItemData.success) {
+    throw new Error(`Kitchen cancel on paid order failed: ${JSON.stringify(cancelPaidItemData)}`);
+  }
+  console.log(`✓ Item cancelled on paid order. Status: ${cancelPaidItemData.data.refundStatus}, Refund Amount: ₹${(cancelPaidItemData.data.refundAmount / 100).toFixed(2)}`);
+  if (cancelPaidItemData.data.refundStatus !== 'PENDING_COUNTER_REFUND' || cancelPaidItemData.data.refundAmount !== 25000) {
+    throw new Error(`Expected refundStatus PENDING_COUNTER_REFUND and refundAmount 25000`);
+  }
+
+  // Customer tracking verifies pending refund notice
+  const custTrackingPaidRes = await fetch(`${BASE_URL}/api/v1/public/orders/${order4.orderNumber}`, {
+    headers: { Cookie: tableSessionCookie },
+  });
+  const custTrackingPaidData = await custTrackingPaidRes.json();
+  if (custTrackingPaidData.data.order.refundStatus !== 'PENDING_COUNTER_REFUND') {
+    throw new Error(`Customer tracking does not reflect PENDING_COUNTER_REFUND status`);
+  }
+  console.log(`✓ Customer tracking verifies: PENDING_COUNTER_REFUND (₹${(custTrackingPaidData.data.order.refundAmount / 100).toFixed(2)} pending)`);
+
+  // Cashier completes counter refund
+  const refundCounterRes = await fetch(
+    `${BASE_URL}/api/v1/restaurants/${restaurantId}/orders/${order4.id}/refund-counter`,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Cookie: authCookie,
+      },
+    },
+  );
+  const refundCounterData = await refundCounterRes.json();
+  if (!refundCounterRes.ok || !refundCounterData.success) {
+    throw new Error(`Counter refund completion failed: ${JSON.stringify(refundCounterData)}`);
+  }
+  console.log(`✓ Cashier marked counter refund as paid: ₹${(refundCounterData.data.refundedAmount / 100).toFixed(2)}`);
+  if (
+    refundCounterData.data.order.refundStatus !== 'REFUNDED_AT_COUNTER' ||
+    refundCounterData.data.order.paymentStatus !== 'PARTIALLY_REFUNDED'
+  ) {
+    throw new Error(`Expected REFUNDED_AT_COUNTER and PARTIALLY_REFUNDED status`);
+  }
+  console.log(`✓ Order payment status successfully updated to: ${refundCounterData.data.order.paymentStatus}`);
+
   console.log('\n====================================================');
-  console.log('✓ All 14 Live End-to-End User Journeys Passed Successfully!');
+  console.log('✓ All 17 Live End-to-End User Journeys Passed Successfully!');
   console.log('====================================================\n');
 }
 

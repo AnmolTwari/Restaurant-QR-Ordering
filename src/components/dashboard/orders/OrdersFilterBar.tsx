@@ -14,6 +14,7 @@ interface OrdersFilterBarProps {
 
 const STATUS_FILTERS: Array<{ id: string; label: string }> = [
   { id: 'all', label: 'All Orders' },
+  { id: 'pending_refunds', label: 'Pending Refunds' },
   { id: OrderStatus.PENDING, label: 'Pending' },
   { id: OrderStatus.ACCEPTED, label: 'Accepted' },
   { id: OrderStatus.PREPARING, label: 'Preparing' },

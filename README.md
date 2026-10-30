@@ -5,7 +5,7 @@
 [![Prisma](https://img.shields.io/badge/Prisma-5.22-2D3748?style=flat&logo=prisma)](https://www.prisma.io/)
 [![Tailwind CSS](https://img.shields.io/badge/TailwindCSS-3.4-38B2AC?style=flat&logo=tailwind-css)](https://tailwindcss.com/)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-336791?style=flat&logo=postgresql)](https://www.postgresql.org/)
-[![Tests](https://img.shields.io/badge/Tests-103%20Passed-success?style=flat&logo=vitest)](https://vitest.dev/)
+[![Tests](https://img.shields.io/badge/Tests-123%20Passed-success?style=flat&logo=vitest)](https://vitest.dev/)
 
 A unified, multi-tenant restaurant management and contactless table QR ordering system designed for high concurrency, security, and exceptional dining experiences.
 
@@ -155,7 +155,7 @@ Open [http://localhost:3000](http://localhost:3000) to view the application.
 The codebase includes comprehensive automated tests covering unit logic, integration routes, tenant boundaries, and end-to-end user journeys:
 
 ```bash
-# Run all Vitest test suites (103 tests)
+# Run all Vitest test suites (123 tests)
 pnpm test --run
 
 # Run TypeScript compiler type-checking
@@ -176,3 +176,4 @@ npx tsx scripts/live-e2e-verification.ts
 ## 📄 License
 
 This project is licensed under the [MIT License](LICENSE).
+

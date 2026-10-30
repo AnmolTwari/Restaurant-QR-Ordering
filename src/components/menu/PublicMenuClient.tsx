@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { UtensilsCrossed, ShoppingBag, ArrowRight, AlertTriangle, RefreshCw } from 'lucide-react';
 import type { PublicMenuData, PublicMenuItem } from '@/types/public-menu';
 import { useCart } from '@/hooks/useCart';
+import { useDiningSession } from '@/components/menu/hooks/useDiningSession';
 import { formatMoney } from '@/lib/formatters';
 
 import { MenuHeader } from '@/components/menu/MenuHeader';
@@ -11,6 +12,7 @@ import { MenuFilterBar } from '@/components/menu/MenuFilterBar';
 import { MenuItemCard } from '@/components/menu/MenuItemCard';
 import { CartDrawer } from '@/components/menu/CartDrawer';
 import { OrderTrackingView } from '@/components/menu/OrderTrackingView';
+import { CustomerOrdersModal } from '@/components/menu/CustomerOrdersModal';
 
 interface PublicMenuClientProps {
   slug: string;
@@ -32,56 +34,36 @@ export function PublicMenuClient({
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [submittingOrder, setSubmittingOrder] = useState(false);
   const [activeOrderNumber, setActiveOrderNumber] = useState<string | null>(initialOrderNumber);
+  const [isOrdersModalOpen, setIsOrdersModalOpen] = useState(false);
+  const [ordersCount, setOrdersCount] = useState(0);
 
-  // Dining Session State (HttpOnly cookie is primary credential)
-  const [sessionReady, setSessionReady] = useState(false);
-  const [sessionVerifying, setSessionVerifying] = useState(true);
-  const [sessionError, setSessionError] = useState<string | null>(null);
+  // Dining Session State
+  const {
+    sessionReady,
+    sessionVerifying,
+    sessionError,
+    setSessionReady,
+    setSessionError,
+  } = useDiningSession(slug, tableToken);
 
-  // Establish or verify dining session via Route Handler
+  // Poll or count orders once session is established
   useEffect(() => {
-    let isMounted = true;
-    setSessionVerifying(true);
-    setSessionError(null);
-
-    async function establishSession() {
+    if (!sessionReady) return;
+    async function loadOrdersCount() {
       try {
-        const res = await fetch('/api/v1/public/session', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            restaurantSlug: slug,
-            tableToken: tableToken || undefined,
-          }),
+        const res = await fetch(`/api/v1/public/orders?restaurantSlug=${encodeURIComponent(slug)}`, {
+          cache: 'no-store',
         });
-
-        const json = await res.json();
-        if (!isMounted) return;
-
-        if (res.ok && json.success && json.data?.valid) {
-          setSessionReady(true);
-          setSessionError(null);
-        } else {
-          setSessionReady(false);
-          setSessionError(
-            json.error?.message ||
-              'Your table session is invalid, expired, or belongs to another restaurant. Please rescan your table QR code.',
-          );
+        const resJson = await res.json();
+        if (res.ok && resJson.success && Array.isArray(resJson.data?.orders)) {
+          setOrdersCount(resJson.data.orders.length);
         }
       } catch {
-        if (!isMounted) return;
-        setSessionReady(false);
-        setSessionError('Network error establishing table session. Please check your connection.');
-      } finally {
-        if (isMounted) setSessionVerifying(false);
+        // Silently ignore background count failure
       }
     }
-
-    void establishSession();
-    return () => {
-      isMounted = false;
-    };
-  }, [slug, tableToken]);
+    void loadOrdersCount();
+  }, [sessionReady, slug]);
 
   // Initialize cart with table context
   const cart = useCart(slug, data.table.tableNumber || 'default');
@@ -130,12 +112,9 @@ export function PublicMenuClient({
     try {
       const idempotencyKey = `ord_idem_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
 
-      // Standard browser customer flow: HttpOnly table_session cookie is transmitted automatically
       const res = await fetch('/api/v1/public/orders', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           restaurantSlug: slug,
           idempotencyKey,
@@ -163,6 +142,7 @@ export function PublicMenuClient({
 
       cart.clearCart();
       setIsCartOpen(false);
+      setOrdersCount((prev) => prev + 1);
       setActiveOrderNumber(resData.data.order.orderNumber);
     } catch (err) {
       alert((err as Error).message);
@@ -180,7 +160,12 @@ export function PublicMenuClient({
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 pb-28 selection:bg-orange-500 selection:text-white">
       {/* Restaurant & Table Header */}
-      <MenuHeader restaurant={data.restaurant} table={data.table} />
+      <MenuHeader
+        restaurant={data.restaurant}
+        table={data.table}
+        onOpenOrders={() => setIsOrdersModalOpen(true)}
+        ordersCount={ordersCount}
+      />
 
       {/* Session Error Alert Banner */}
       {!sessionVerifying && !sessionReady && (
@@ -287,6 +272,20 @@ export function PublicMenuClient({
         onRemoveItem={cart.removeItem}
         onOrderNotesChange={cart.setOrderNotes}
         onSubmitOrder={handleSubmitOrder}
+      />
+
+      {/* My Table Orders Modal */}
+      <CustomerOrdersModal
+        isOpen={isOrdersModalOpen}
+        restaurantSlug={slug}
+        currency={data.restaurant.currency}
+        sessionReady={sessionReady}
+        sessionError={sessionError}
+        onClose={() => setIsOrdersModalOpen(false)}
+        onSelectOrder={(orderNumber) => {
+          setIsOrdersModalOpen(false);
+          setActiveOrderNumber(orderNumber);
+        }}
       />
     </div>
   );

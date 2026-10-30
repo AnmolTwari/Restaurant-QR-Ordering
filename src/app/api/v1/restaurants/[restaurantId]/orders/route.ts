@@ -24,18 +24,27 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
 
     const { searchParams } = new URL(req.url);
     const statusParam = searchParams.get('status');
+    const refundStatusParam = searchParams.get('refundStatus');
     const tableIdParam = searchParams.get('tableId');
     const limit = parseInt(searchParams.get('limit') || '50', 10);
 
-    const statusFilter = statusParam
-      ? (statusParam.split(',').map((s) => s.trim().toUpperCase()) as OrderStatus[])
-      : undefined;
+    const isPendingRefunds =
+      statusParam?.toLowerCase() === 'pending_refunds' ||
+      refundStatusParam === 'PENDING_COUNTER_REFUND';
+
+    const statusFilter =
+      statusParam && !isPendingRefunds
+        ? (statusParam.split(',').map((s) => s.trim().toUpperCase()) as OrderStatus[])
+        : undefined;
 
     const orders = await prisma.order.findMany({
       where: {
         restaurantId: restaurant.id,
         ...(statusFilter && statusFilter.length > 0 && {
           orderStatus: { in: statusFilter },
+        }),
+        ...(isPendingRefunds && {
+          refundStatus: 'PENDING_COUNTER_REFUND',
         }),
         ...(tableIdParam && { tableId: tableIdParam }),
       },
@@ -55,6 +64,11 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
             quantity: true,
             totalPrice: true,
             notes: true,
+            status: true,
+            cancelReason: true,
+            cancelNote: true,
+            cancelledAt: true,
+            cancelledByUserId: true,
           },
         },
       },

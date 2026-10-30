@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { UserRole, OrderStatus, PaymentStatus, PaymentMethod, TableStatus } from '@/types';
+import { UserRole, OrderStatus, OrderItemStatus, PaymentStatus, PaymentMethod, TableStatus } from '@/types';
 import { getSystemHealth, checkDatabaseHealth } from '@/lib/db-health';
 import { prisma } from '@/lib/prisma';
 
@@ -19,6 +19,11 @@ describe('Domain Contracts & Enums', () => {
     expect(OrderStatus.READY).toBe('READY');
     expect(OrderStatus.SERVED).toBe('SERVED');
     expect(OrderStatus.CANCELLED).toBe('CANCELLED');
+  });
+
+  it('should have required OrderItemStatus enum values', () => {
+    expect(OrderItemStatus.ACTIVE).toBe('ACTIVE');
+    expect(OrderItemStatus.CANCELLED).toBe('CANCELLED');
   });
 
   it('should have required PaymentStatus and PaymentMethod enum values', () => {
