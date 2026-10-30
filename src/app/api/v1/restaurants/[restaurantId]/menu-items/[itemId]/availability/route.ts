@@ -12,13 +12,14 @@ const ToggleAvailabilitySchema = z.object({
 });
 
 interface RouteParams {
-  params: {
+  params: Promise<{
     restaurantId: string;
     itemId: string;
-  };
+  }>;
 }
 
-export async function PATCH(req: NextRequest, { params }: RouteParams) {
+export async function PATCH(req: NextRequest, props: RouteParams) {
+  const params = await props.params;
   try {
     // OWNER, MANAGER, or KITCHEN can toggle item availability
     const { restaurant } = await requireRestaurantAccess(params.restaurantId, [

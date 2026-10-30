@@ -16,16 +16,18 @@ import { ReceiptActions } from '@/components/receipt/ReceiptActions';
 export const dynamic = 'force-dynamic';
 
 interface PageProps {
-  params: {
+  params: Promise<{
     slug: string;
     orderNumber: string;
-  };
-  searchParams?: {
+  }>;
+  searchParams?: Promise<{
     receiptToken?: string;
-  };
+  }>;
 }
 
-export default async function CustomerReceiptPage({ params, searchParams }: PageProps) {
+export default async function CustomerReceiptPage(props: PageProps) {
+  const searchParams = await props.searchParams;
+  const params = await props.params;
   const result = await getReceiptData(params.orderNumber, {
     receiptToken: searchParams?.receiptToken,
   });

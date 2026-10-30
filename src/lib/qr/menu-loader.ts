@@ -30,7 +30,7 @@ export async function loadPublicMenuData(
 
     let restaurant;
     let table;
-    const existingSessionToken = getTableSessionTokenFromCookies();
+    const existingSessionToken = await getTableSessionTokenFromCookies();
 
     if (tableToken) {
       // 1. Resolve raw table token via its SHA-256 hash

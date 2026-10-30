@@ -114,11 +114,11 @@ describe('Phase 7: Kitchen Item-Level Cancellation', () => {
     );
 
     const res = await handleCancelItem(req, {
-      params: {
+      params: Promise.resolve({
         restaurantId: 'rest_k_1',
         orderId: 'order_k_100',
         itemId: 'item_pizza_1',
-      },
+      }),
     });
 
     const data = await res.json();
@@ -236,11 +236,11 @@ describe('Phase 7: Kitchen Item-Level Cancellation', () => {
     );
 
     const res = await handleCancelItem(req, {
-      params: {
+      params: Promise.resolve({
         restaurantId: 'rest_k_1',
         orderId: 'order_k_100',
         itemId: 'item_pizza_1',
-      },
+      }),
     });
 
     expect(res.status).toBe(403);

@@ -15,7 +15,7 @@ export interface AuthenticatedUser {
  * Returns null if not logged in or user is inactive.
  */
 export async function getCurrentUser(): Promise<AuthenticatedUser | null> {
-  const token = getAuthTokenFromCookies();
+  const token = await getAuthTokenFromCookies();
   if (!token) {
     return null;
   }

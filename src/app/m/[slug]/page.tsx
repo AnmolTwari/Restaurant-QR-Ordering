@@ -6,19 +6,18 @@ import { PublicMenuClient } from '@/components/menu/PublicMenuClient';
 export const dynamic = 'force-dynamic';
 
 interface PublicMenuPageProps {
-  params: {
+  params: Promise<{
     slug: string;
-  };
-  searchParams?: {
+  }>;
+  searchParams?: Promise<{
     tableToken?: string;
     orderNumber?: string;
-  };
+  }>;
 }
 
-export default async function PublicMenuPage({
-  params,
-  searchParams,
-}: PublicMenuPageProps) {
+export default async function PublicMenuPage(props: PublicMenuPageProps) {
+  const searchParams = await props.searchParams;
+  const params = await props.params;
   const tableToken = searchParams?.tableToken;
   const initialOrderNumber = searchParams?.orderNumber || null;
 

@@ -7,13 +7,14 @@ import { apiSuccess, handleApiError } from '@/lib/api-response';
 export const dynamic = 'force-dynamic';
 
 interface RouteParams {
-  params: {
+  params: Promise<{
     restaurantId: string;
     paymentId: string;
-  };
+  }>;
 }
 
-export async function POST(req: NextRequest, { params }: RouteParams) {
+export async function POST(req: NextRequest, props: RouteParams) {
+  const params = await props.params;
   try {
     await requireRestaurantAccess(params.restaurantId, [
       UserRole.OWNER,

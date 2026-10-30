@@ -8,10 +8,10 @@ import { apiSuccess, handleApiError } from '@/lib/api-response';
 export const dynamic = 'force-dynamic';
 
 interface RouteParams {
-  params: {
+  params: Promise<{
     restaurantId: string;
     orderId: string;
-  };
+  }>;
 }
 
 const SettleCounterSchema = z.object({
@@ -20,7 +20,8 @@ const SettleCounterSchema = z.object({
   notes: z.string().max(300).optional(),
 });
 
-export async function POST(req: NextRequest, { params }: RouteParams) {
+export async function POST(req: NextRequest, props: RouteParams) {
+  const params = await props.params;
   try {
     // 1. Authorize staff: CASHIER, WAITER, OWNER, MANAGER
     const context = await requireRestaurantAccess(params.restaurantId, [

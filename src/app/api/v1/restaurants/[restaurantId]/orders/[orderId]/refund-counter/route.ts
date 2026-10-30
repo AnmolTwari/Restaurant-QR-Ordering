@@ -7,10 +7,10 @@ import { UserRole } from '@/types';
 export const dynamic = 'force-dynamic';
 
 interface RouteParams {
-  params: {
+  params: Promise<{
     restaurantId: string;
     orderId: string;
-  };
+  }>;
 }
 
 /**
@@ -18,7 +18,8 @@ interface RouteParams {
  * Marks an eligible pending counter refund as completed.
  * Guarded for OWNER, MANAGER, and CASHIER roles only.
  */
-export async function POST(req: NextRequest, { params }: RouteParams) {
+export async function POST(req: NextRequest, props: RouteParams) {
+  const params = await props.params;
   try {
     const { user, restaurant, membership } = await requireRestaurantAccess(
       params.restaurantId,

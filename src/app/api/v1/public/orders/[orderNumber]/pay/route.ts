@@ -10,12 +10,13 @@ import { checkRateLimit, getClientIp, rateLimitResponse } from '@/lib/rate-limit
 export const dynamic = 'force-dynamic';
 
 interface RouteParams {
-  params: {
+  params: Promise<{
     orderNumber: string;
-  };
+  }>;
 }
 
-export async function POST(req: NextRequest, { params }: RouteParams) {
+export async function POST(req: NextRequest, props: RouteParams) {
+  const params = await props.params;
   try {
     // Rate limit: 15 payment requests per minute per IP
     const ip = getClientIp(req);

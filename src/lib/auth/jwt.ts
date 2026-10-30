@@ -55,9 +55,10 @@ export async function verifyAuthToken(token: string): Promise<AuthTokenPayload |
 /**
  * Sets the secure httpOnly auth cookie on the current response.
  */
-export function setAuthCookie(token: string): void {
+export async function setAuthCookie(token: string): Promise<void> {
   const isProduction = process.env.NODE_ENV === 'production';
-  cookies().set(AUTH_COOKIE_NAME, token, {
+  const cookieStore = await cookies();
+  cookieStore.set(AUTH_COOKIE_NAME, token, {
     httpOnly: true,
     secure: isProduction,
     sameSite: 'lax',
@@ -69,9 +70,10 @@ export function setAuthCookie(token: string): void {
 /**
  * Clears the auth cookie.
  */
-export function clearAuthCookie(): void {
+export async function clearAuthCookie(): Promise<void> {
   try {
-    cookies().delete(AUTH_COOKIE_NAME);
+    const cookieStore = await cookies();
+    cookieStore.delete(AUTH_COOKIE_NAME);
   } catch {
     // Handled safely outside request scope
   }
@@ -80,9 +82,10 @@ export function clearAuthCookie(): void {
 /**
  * Retrieves the raw auth token string from request cookies.
  */
-export function getAuthTokenFromCookies(): string | undefined {
+export async function getAuthTokenFromCookies(): Promise<string | undefined> {
   try {
-    return cookies().get(AUTH_COOKIE_NAME)?.value;
+    const cookieStore = await cookies();
+    return cookieStore.get(AUTH_COOKIE_NAME)?.value;
   } catch {
     return undefined;
   }

@@ -14,12 +14,13 @@ const CreateCategorySchema = z.object({
 });
 
 interface RouteParams {
-  params: {
+  params: Promise<{
     restaurantId: string;
-  };
+  }>;
 }
 
-export async function GET(req: NextRequest, { params }: RouteParams) {
+export async function GET(req: NextRequest, props: RouteParams) {
+  const params = await props.params;
   try {
     const { restaurant } = await requireRestaurantAccess(params.restaurantId);
 
@@ -51,7 +52,8 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
   }
 }
 
-export async function POST(req: NextRequest, { params }: RouteParams) {
+export async function POST(req: NextRequest, props: RouteParams) {
+  const params = await props.params;
   try {
     const { restaurant } = await requireRestaurantAccess(params.restaurantId, [
       UserRole.OWNER,

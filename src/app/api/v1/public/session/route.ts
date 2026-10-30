@@ -69,7 +69,7 @@ export async function POST(req: NextRequest) {
       // 2. Resolve or create dining table session (reuses active session if present)
       const existingCookieToken =
         req.cookies.get(TABLE_SESSION_COOKIE_NAME)?.value ||
-        getTableSessionTokenFromCookies();
+        (await getTableSessionTokenFromCookies());
       const sessionResult = await resolveOrCreateTableSession(
         resolved.restaurant.id,
         resolved.table.id,

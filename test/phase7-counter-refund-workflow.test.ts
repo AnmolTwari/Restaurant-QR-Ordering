@@ -132,10 +132,10 @@ describe('Phase 7: Counter Refund Staff Workflow', () => {
     );
 
     const res = await handleRefundCounter(req, {
-      params: {
+      params: Promise.resolve({
         restaurantId: 'rest_counter_1',
         orderId: 'order_cr_1',
-      },
+      }),
     });
 
     const data = await res.json();
@@ -271,10 +271,10 @@ describe('Phase 7: Counter Refund Staff Workflow', () => {
     );
 
     const res = await handleRefundCounter(req, {
-      params: {
+      params: Promise.resolve({
         restaurantId: 'rest_counter_1',
         orderId: 'order_cr_1',
-      },
+      }),
     });
 
     expect(res.status).toBe(403);

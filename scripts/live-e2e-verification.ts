@@ -608,7 +608,7 @@ async function runE2EVerification() {
         Cookie: authCookie,
       },
       body: JSON.stringify({
-        reason: 'Out of stock',
+        reason: 'Ingredient out of stock',
         note: 'Kitchen ran out of bread',
       }),
     },

@@ -141,7 +141,7 @@ describe('Public Order Authorization & Receipt Token Isolation', () => {
       vi.spyOn(prisma.order, 'findFirst').mockResolvedValue(null);
 
       const req = new NextRequest('http://localhost:3000/api/v1/public/orders/ORD-TABLE1-100');
-      const res = await handleTrackOrder(req, { params: { orderNumber: 'ORD-TABLE1-100' } });
+      const res = await handleTrackOrder(req, { params: Promise.resolve({ orderNumber: 'ORD-TABLE1-100' }) });
       const data = await res.json();
 
       expect(res.status).toBe(404);
@@ -169,7 +169,7 @@ describe('Public Order Authorization & Receipt Token Isolation', () => {
       const req = new NextRequest('http://localhost:3000/api/v1/public/orders/ORD-TABLE1-100/cancel', {
         method: 'POST',
       });
-      const res = await handleCancelOrder(req, { params: { orderNumber: 'ORD-TABLE1-100' } });
+      const res = await handleCancelOrder(req, { params: Promise.resolve({ orderNumber: 'ORD-TABLE1-100' }) });
       const data = await res.json();
 
       expect(res.status).toBe(404);
@@ -189,7 +189,7 @@ describe('Public Order Authorization & Receipt Token Isolation', () => {
       const req = new NextRequest('http://localhost:3000/api/v1/public/orders/ORD-TABLE1-100/pay', {
         method: 'POST',
       });
-      const res = await handlePayOrder(req, { params: { orderNumber: 'ORD-TABLE1-100' } });
+      const res = await handlePayOrder(req, { params: Promise.resolve({ orderNumber: 'ORD-TABLE1-100' }) });
       const data = await res.json();
 
       expect(res.status).toBe(404);
@@ -206,7 +206,7 @@ describe('Public Order Authorization & Receipt Token Isolation', () => {
         method: 'POST',
         headers: { 'x-session-token': receiptToken },
       });
-      const res = await handlePayOrder(req, { params: { orderNumber: 'ORD-TABLE1-100' } });
+      const res = await handlePayOrder(req, { params: Promise.resolve({ orderNumber: 'ORD-TABLE1-100' }) });
       const data = await res.json();
 
       expect(res.status).toBe(401);

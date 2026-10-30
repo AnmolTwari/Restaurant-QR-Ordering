@@ -14,13 +14,14 @@ const UpdateStatusSchema = z.object({
 });
 
 interface RouteParams {
-  params: {
+  params: Promise<{
     restaurantId: string;
     orderId: string;
-  };
+  }>;
 }
 
-export async function PATCH(req: NextRequest, { params }: RouteParams) {
+export async function PATCH(req: NextRequest, props: RouteParams) {
+  const params = await props.params;
   try {
     const { user, restaurant, membership } = await requireRestaurantAccess(
       params.restaurantId,

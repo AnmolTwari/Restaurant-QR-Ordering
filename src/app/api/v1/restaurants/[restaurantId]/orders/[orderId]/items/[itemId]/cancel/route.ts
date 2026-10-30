@@ -18,14 +18,15 @@ const CancelItemBodySchema = z.object({
 });
 
 interface RouteParams {
-  params: {
+  params: Promise<{
     restaurantId: string;
     orderId: string;
     itemId: string;
-  };
+  }>;
 }
 
-export async function POST(req: NextRequest, { params }: RouteParams) {
+export async function POST(req: NextRequest, props: RouteParams) {
+  const params = await props.params;
   try {
     const { user, restaurant, membership } = await requireRestaurantAccess(
       params.restaurantId,

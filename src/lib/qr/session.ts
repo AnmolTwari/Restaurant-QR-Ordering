@@ -72,10 +72,11 @@ export async function resolveOrCreateTableSession(
 /**
  * Sets the secure table session cookie.
  */
-export function setTableSessionCookie(sessionToken: string): void {
+export async function setTableSessionCookie(sessionToken: string): Promise<void> {
   try {
     const isProduction = process.env.NODE_ENV === 'production';
-    cookies().set(TABLE_SESSION_COOKIE_NAME, sessionToken, {
+    const cookieStore = await cookies();
+    cookieStore.set(TABLE_SESSION_COOKIE_NAME, sessionToken, {
       httpOnly: true,
       secure: isProduction,
       sameSite: 'lax',
@@ -107,7 +108,7 @@ export function attachTableSessionCookie(
 /**
  * Clears the table session cookie from response or store.
  */
-export function clearTableSessionCookie(response?: NextResponse): void {
+export async function clearTableSessionCookie(response?: NextResponse): Promise<void> {
   const isProduction = process.env.NODE_ENV === 'production';
   if (response) {
     response.cookies.set(TABLE_SESSION_COOKIE_NAME, '', {
@@ -119,7 +120,8 @@ export function clearTableSessionCookie(response?: NextResponse): void {
     });
   } else {
     try {
-      cookies().set(TABLE_SESSION_COOKIE_NAME, '', {
+      const cookieStore = await cookies();
+      cookieStore.set(TABLE_SESSION_COOKIE_NAME, '', {
         httpOnly: true,
         secure: isProduction,
         sameSite: 'lax',
@@ -135,9 +137,10 @@ export function clearTableSessionCookie(response?: NextResponse): void {
 /**
  * Gets the current raw table session token from cookies.
  */
-export function getTableSessionTokenFromCookies(): string | undefined {
+export async function getTableSessionTokenFromCookies(): Promise<string | undefined> {
   try {
-    return cookies().get(TABLE_SESSION_COOKIE_NAME)?.value;
+    const cookieStore = await cookies();
+    return cookieStore.get(TABLE_SESSION_COOKIE_NAME)?.value;
   } catch {
     return undefined;
   }
@@ -159,7 +162,7 @@ export interface VerifiedTableSessionContext {
 export async function verifyActiveTableSession(
   rawToken?: string,
 ): Promise<VerifiedTableSessionContext | null> {
-  const token = rawToken || getTableSessionTokenFromCookies();
+  const token = rawToken || (await getTableSessionTokenFromCookies());
   if (!token || typeof token !== 'string' || token.trim().length === 0) {
     return null;
   }
