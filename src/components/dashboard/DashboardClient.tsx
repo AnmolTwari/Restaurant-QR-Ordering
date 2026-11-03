@@ -26,6 +26,7 @@ import { CategoryModal } from '@/components/dashboard/modals/CategoryModal';
 import { MenuItemModal } from '@/components/dashboard/modals/MenuItemModal';
 import { TableModal } from '@/components/dashboard/modals/TableModal';
 import { QrCodeModal } from '@/components/dashboard/modals/QrCodeModal';
+import { ClearTableModal } from '@/components/dashboard/modals/ClearTableModal';
 
 import { useMenuManagement } from '@/components/dashboard/hooks/useMenuManagement';
 import { useTableManagement } from '@/components/dashboard/hooks/useTableManagement';
@@ -214,6 +215,7 @@ export function DashboardClient({ initialData }: DashboardClientProps) {
                 setShowTableModal(true);
               }}
               onDeactivateTable={tableOps.handleDeactivateTable}
+              onClearTable={tableOps.handleOpenClearModal}
             />
           )}
 
@@ -282,6 +284,16 @@ export function DashboardClient({ initialData }: DashboardClientProps) {
         onClose={() => tableOps.setShowQrModal(false)}
         onRotate={tableOps.handleRotateQr}
         onRevoke={tableOps.handleRevokeQr}
+      />
+
+      <ClearTableModal
+        isOpen={tableOps.showClearModal}
+        table={tableOps.clearingTable}
+        restaurantId={activeRestaurant?.id || ''}
+        currency={activeRestaurant?.currency}
+        onClose={tableOps.handleCloseClearModal}
+        onCleared={refreshActiveData}
+        notify={notify}
       />
     </div>
   );

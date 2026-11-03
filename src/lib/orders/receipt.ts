@@ -129,7 +129,8 @@ export async function getReceiptData(
     if (
       guestSession &&
       guestSession.restaurantId === order.restaurantId &&
-      guestSession.tableId === order.tableId
+      guestSession.tableId === order.tableId &&
+      guestSession.session.id === order.sessionId
     ) {
       isAuthorized = true;
     }

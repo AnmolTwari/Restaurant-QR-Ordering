@@ -10,6 +10,8 @@ import {
   Loader2,
   RefreshCw,
   ShoppingBag,
+  Sparkles,
+  CheckCircle2,
 } from 'lucide-react';
 import { OrderStatus, PaymentStatus, OrderItemStatus } from '@/types';
 import type { PublicOrderTracking } from '@/types/orders';
@@ -37,15 +39,17 @@ export function CustomerOrdersModal({
   const [orders, setOrders] = useState<PublicOrderTracking[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [filter, setFilter] = useState<'all' | 'active' | 'completed'>('all');
 
   const fetchOrders = useCallback(async () => {
     if (!sessionReady) return;
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`/api/v1/public/orders?restaurantSlug=${encodeURIComponent(restaurantSlug)}`, {
-        cache: 'no-store',
-      });
+      const res = await fetch(
+        `/api/v1/public/orders?restaurantSlug=${encodeURIComponent(restaurantSlug)}`,
+        { cache: 'no-store' },
+      );
       const data = await res.json();
       if (!res.ok || !data.success) {
         throw new Error(data.error?.message || 'Failed to load your table orders.');
@@ -66,6 +70,20 @@ export function CustomerOrdersModal({
 
   if (!isOpen) return null;
 
+  const activeOrders = orders.filter(
+    (o) => o.orderStatus !== OrderStatus.SERVED && o.orderStatus !== OrderStatus.CANCELLED,
+  );
+  const completedOrders = orders.filter(
+    (o) => o.orderStatus === OrderStatus.SERVED || o.orderStatus === OrderStatus.CANCELLED,
+  );
+
+  const displayedOrders =
+    filter === 'active'
+      ? activeOrders
+      : filter === 'completed'
+      ? completedOrders
+      : orders;
+
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/80 backdrop-blur-sm animate-in fade-in">
       <div className="bg-slate-900 border border-slate-800 rounded-t-3xl sm:rounded-3xl max-w-lg w-full max-h-[85vh] flex flex-col shadow-2xl text-slate-100 overflow-hidden">
@@ -78,7 +96,7 @@ export function CustomerOrdersModal({
             <div>
               <h2 className="text-sm font-bold text-white">My Table Orders</h2>
               <p className="text-[11px] text-slate-400">
-                {orders.length} {orders.length === 1 ? 'order' : 'orders'} in this session
+                {activeOrders.length} active • {completedOrders.length} completed
               </p>
             </div>
           </div>
@@ -100,6 +118,45 @@ export function CustomerOrdersModal({
             </button>
           </div>
         </div>
+
+        {/* Tab Filters */}
+        {orders.length > 0 && (
+          <div className="flex items-center gap-1.5 px-4 pt-3 pb-2 border-b border-slate-800/60 bg-slate-950/40">
+            <button
+              onClick={() => setFilter('all')}
+              className={`px-3 py-1 rounded-xl text-xs font-semibold transition-all ${
+                filter === 'all'
+                  ? 'bg-orange-600 text-white shadow-sm shadow-orange-950'
+                  : 'bg-slate-800/80 text-slate-400 hover:text-white'
+              }`}
+            >
+              All ({orders.length})
+            </button>
+            <button
+              onClick={() => setFilter('active')}
+              className={`px-3 py-1 rounded-xl text-xs font-semibold transition-all flex items-center gap-1.5 ${
+                filter === 'active'
+                  ? 'bg-orange-600 text-white shadow-sm shadow-orange-950'
+                  : 'bg-slate-800/80 text-slate-400 hover:text-white'
+              }`}
+            >
+              <span>Active ({activeOrders.length})</span>
+              {activeOrders.length > 0 && (
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+              )}
+            </button>
+            <button
+              onClick={() => setFilter('completed')}
+              className={`px-3 py-1 rounded-xl text-xs font-semibold transition-all ${
+                filter === 'completed'
+                  ? 'bg-orange-600 text-white shadow-sm shadow-orange-950'
+                  : 'bg-slate-800/80 text-slate-400 hover:text-white'
+              }`}
+            >
+              Completed ({completedOrders.length})
+            </button>
+          </div>
+        )}
 
         {/* Modal Content */}
         <div className="p-4 overflow-y-auto flex-1 space-y-3">
@@ -145,8 +202,19 @@ export function CustomerOrdersModal({
             </div>
           )}
 
+          {/* Empty Filter State */}
+          {!loading && sessionReady && orders.length > 0 && displayedOrders.length === 0 && (
+            <div className="py-8 text-center text-slate-400 space-y-1">
+              <p className="text-xs">
+                {filter === 'active'
+                  ? 'All orders in your visit have been served! You can order more items anytime.'
+                  : 'No completed orders yet.'}
+              </p>
+            </div>
+          )}
+
           {/* Orders List */}
-          {orders.map((order) => {
+          {displayedOrders.map((order) => {
             const isCancelled = order.orderStatus === OrderStatus.CANCELLED;
             const isServed = order.orderStatus === OrderStatus.SERVED;
             const isPaid = order.paymentStatus === PaymentStatus.PAID;
@@ -158,16 +226,35 @@ export function CustomerOrdersModal({
             return (
               <div
                 key={order.id}
-                className="p-4 rounded-2xl bg-slate-950/80 border border-slate-800/80 hover:border-slate-700 transition-all space-y-3"
+                className={`p-4 rounded-2xl border transition-all space-y-3 ${
+                  isServed
+                    ? 'bg-slate-950/40 border-slate-800/60'
+                    : isCancelled
+                    ? 'bg-rose-950/20 border-rose-900/40'
+                    : 'bg-slate-950/90 border-slate-800 shadow-md hover:border-slate-700'
+                }`}
               >
                 <div className="flex items-start justify-between gap-2">
                   <div>
-                    <span className="font-mono text-xs font-bold text-white">
-                      #{order.orderNumber}
-                    </span>
+                    <div className="flex items-center gap-2">
+                      <span className="font-mono text-xs font-bold text-white">
+                        #{order.orderNumber}
+                      </span>
+                      {isServed && (
+                        <span className="inline-flex items-center gap-1 text-[10px] font-bold text-purple-400 bg-purple-950/60 px-1.5 py-0.5 rounded border border-purple-800/50">
+                          <CheckCircle2 className="w-3 h-3 text-purple-400" />
+                          <span>Served</span>
+                        </span>
+                      )}
+                    </div>
                     <div className="flex items-center gap-1.5 text-[11px] text-slate-400 mt-0.5">
                       <Clock className="w-3 h-3 text-slate-500" />
-                      <span>{new Date(order.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                      <span>
+                        {new Date(order.createdAt).toLocaleTimeString([], {
+                          hour: '2-digit',
+                          minute: '2-digit',
+                        })}
+                      </span>
                       <span>•</span>
                       <span>Table {order.table.tableNumber}</span>
                     </div>
@@ -268,4 +355,3 @@ export function CustomerOrdersModal({
     </div>
   );
 }
-

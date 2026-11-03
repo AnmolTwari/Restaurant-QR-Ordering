@@ -35,6 +35,7 @@ export async function GET(req: NextRequest, props: RouteParams) {
         orderNumber: params.orderNumber.toUpperCase(),
         restaurantId: verifiedSession.restaurantId,
         tableId: verifiedSession.tableId,
+        sessionId: verifiedSession.session.id,
       },
       include: {
         restaurant: {

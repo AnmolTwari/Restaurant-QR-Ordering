@@ -7,6 +7,7 @@ const DEFAULT_EXPIRATION = '7d';
 export interface AuthTokenPayload {
   userId: string;
   email: string;
+  tokenVersion?: number;
   [key: string]: unknown;
 }
 
@@ -46,6 +47,7 @@ export async function verifyAuthToken(token: string): Promise<AuthTokenPayload |
     return {
       userId: payload.userId,
       email: (payload.email as string) || '',
+      tokenVersion: typeof payload.tokenVersion === 'number' ? payload.tokenVersion : undefined,
     };
   } catch {
     return null;

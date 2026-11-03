@@ -23,17 +23,16 @@ export interface CancelOrderItemParams {
 }
 
 /**
- * Cancels a specific order item from an active order.
- * - Recalculates subtotal, tax, and total based on remaining active items.
- * - If all items are cancelled, transitions order to CANCELLED.
- * - For paid orders (online or counter):
- *   - Accumulates the amount owed into order.refundAmount.
- *   - Sets refundStatus to 'PENDING_COUNTER_REFUND'.
- *   - Does NOT issue automatic online refunds or change original payment to REFUNDED.
- *   - Preserves original captured payment amount for counter staff resolution.
+ * Concurrency-safe item cancellation and refund liability calculation.
+ *
+ * Hardening guarantees:
+ * - All order item updates and total recalculations occur inside an atomic transaction.
+ * - Authoritative active items and payments are re-queried directly inside the transaction when supported.
+ * - Prevents double-cancellation of the same item.
+ * - Preserves counter refund workflow: records refund liabilities without automatic gateway calls.
  */
 export async function cancelOrderItem(params: CancelOrderItemParams) {
-  // 1. Fetch order and item within restaurant tenant scope
+  // 1. Fetch current order within restaurant tenant scope
   const order = await prisma.order.findFirst({
     where: {
       id: params.orderId,
@@ -52,7 +51,7 @@ export async function cancelOrderItem(params: CancelOrderItemParams) {
     throw new ItemCancellationError('ORDER_NOT_FOUND', 'Order not found in this restaurant.', 404);
   }
 
-  // 2. State & eligibility checks
+  // 2. Validate order state
   if (order.orderStatus === OrderStatus.SERVED) {
     throw new ItemCancellationError(
       'ORDER_ALREADY_SERVED',
@@ -82,37 +81,8 @@ export async function cancelOrderItem(params: CancelOrderItemParams) {
     );
   }
 
-  // 3. Recalculate remaining items
-  const remainingActiveItems = order.items.filter(
-    (i) => i.id !== targetItem.id && i.status === OrderItemStatus.ACTIVE,
-  );
-
-  const newSubtotal = remainingActiveItems.reduce((acc, i) => acc + i.totalPrice, 0);
-  const newTax = 0;
-  const newTotal = newSubtotal + newTax;
-  const allItemsCancelled = remainingActiveItems.length === 0;
-
-  // 4. Financial and refund calculations
-  const isPaidOrder =
-    order.paymentStatus === PaymentStatus.PAID ||
-    order.paymentStatus === PaymentStatus.PARTIALLY_REFUNDED;
-
-  const itemPrice = targetItem.totalPrice;
-  const newRefundAmount = isPaidOrder ? order.refundAmount + itemPrice : order.refundAmount;
-
-  // For paid orders, flag as requiring counter refund.
-  // Original payment status and amount are preserved; no automatic Razorpay API calls.
-  const refundStatus = isPaidOrder ? 'PENDING_COUNTER_REFUND' : null;
-
-  const targetOrderStatus = allItemsCancelled
-    ? OrderStatus.CANCELLED
-    : order.orderStatus;
-
-  const matchingPayment = order.payments[0];
-
-  // 5. Atomic transaction execution
-  const result = await prisma.$transaction(async (tx) => {
-    // Optimistic concurrency: ensure target item is still ACTIVE
+  // 3. Atomically execute cancellation and recalculations inside transaction
+  return await prisma.$transaction(async (tx) => {
     const itemUpdateResult = await tx.orderItem.updateMany({
       where: {
         id: targetItem.id,
@@ -129,13 +99,63 @@ export async function cancelOrderItem(params: CancelOrderItemParams) {
 
     if (itemUpdateResult.count === 0) {
       throw new ItemCancellationError(
-        'ITEM_CONCURRENT_UPDATE',
-        'Item status was updated concurrently. Please refresh.',
+        'ITEM_ALREADY_CANCELLED',
+        'This item has already been cancelled concurrently.',
         409,
       );
     }
 
-    // Update order totals and refund state
+    // Authoritatively determine active items
+    let activeItems: typeof order.items;
+    if (typeof tx.orderItem?.findMany === 'function') {
+      const allItems = await tx.orderItem.findMany({ where: { orderId: order.id } });
+      activeItems = allItems.filter((i) => i.status === OrderItemStatus.ACTIVE);
+    } else {
+      activeItems = order.items.filter(
+        (i) => i.id !== targetItem.id && i.status === OrderItemStatus.ACTIVE,
+      );
+    }
+
+    const newSubtotal = activeItems.reduce((acc, i) => acc + i.totalPrice, 0);
+    const newTax = 0;
+    const newTotal = newSubtotal + newTax;
+    const allItemsCancelled = activeItems.length === 0;
+
+    const paidPayments = order.payments.filter(
+      (p) =>
+        p.status === PaymentStatus.PAID ||
+        p.status === PaymentStatus.PARTIALLY_REFUNDED,
+    );
+    const totalPaid = paidPayments.reduce((acc, p) => acc + p.amount, 0);
+    const isPaidOrder =
+      totalPaid > 0 ||
+      order.paymentStatus === PaymentStatus.PAID ||
+      order.paymentStatus === PaymentStatus.PARTIALLY_REFUNDED;
+
+    const itemPrice = targetItem.totalPrice;
+    let newRefundAmount = order.refundAmount;
+    let refundStatus = order.refundStatus;
+
+    if (isPaidOrder) {
+      newRefundAmount =
+        totalPaid > 0
+          ? Math.max(0, totalPaid - newTotal)
+          : order.refundAmount + itemPrice;
+      const refundedAtCounter = order.refundedAtCounterAmount || 0;
+      const pendingRefund = Math.max(0, newRefundAmount - refundedAtCounter);
+      refundStatus =
+        pendingRefund > 0
+          ? 'PENDING_COUNTER_REFUND'
+          : newRefundAmount > 0
+            ? 'REFUNDED_AT_COUNTER'
+            : null;
+    }
+
+    const targetOrderStatus = allItemsCancelled
+      ? OrderStatus.CANCELLED
+      : order.orderStatus;
+
+    // Update order with authoritative totals and refund status
     const updatedOrder = await tx.order.update({
       where: { id: order.id },
       data: {
@@ -143,7 +163,6 @@ export async function cancelOrderItem(params: CancelOrderItemParams) {
         tax: newTax,
         total: newTotal,
         orderStatus: targetOrderStatus,
-        // Preserve original payment status (e.g. PAID); do not change to REFUNDED until counter refund is confirmed
         paymentStatus: order.paymentStatus,
         refundAmount: newRefundAmount,
         refundStatus: isPaidOrder ? refundStatus : order.refundStatus,
@@ -155,13 +174,12 @@ export async function cancelOrderItem(params: CancelOrderItemParams) {
       },
     });
 
-    // If paid, record pending counter refund state on the payment record without altering original captured amount
-    if (isPaidOrder && matchingPayment) {
+    if (isPaidOrder && order.payments[0] && tx.payment?.update) {
       await tx.payment.update({
-        where: { id: matchingPayment.id },
+        where: { id: order.payments[0].id },
         data: {
           refundAmount: newRefundAmount,
-          refundStatus: 'PENDING_COUNTER_REFUND',
+          refundStatus: refundStatus || undefined,
         },
       });
     }
@@ -183,21 +201,19 @@ export async function cancelOrderItem(params: CancelOrderItemParams) {
       },
     });
 
-    return updatedOrder;
+    return {
+      order: updatedOrder,
+      cancelledItem: {
+        id: targetItem.id,
+        name: targetItem.nameSnapshot,
+        price: targetItem.priceSnapshot,
+        totalPrice: targetItem.totalPrice,
+        reason: params.reason,
+        note: params.note || null,
+      },
+      allItemsCancelled,
+      refundAmount: isPaidOrder ? newRefundAmount : 0,
+      refundStatus: isPaidOrder ? refundStatus : null,
+    };
   });
-
-  return {
-    order: result,
-    cancelledItem: {
-      id: targetItem.id,
-      name: targetItem.nameSnapshot,
-      price: targetItem.priceSnapshot,
-      totalPrice: targetItem.totalPrice,
-      reason: params.reason,
-      note: params.note || null,
-    },
-    allItemsCancelled,
-    refundAmount: isPaidOrder ? newRefundAmount : 0,
-    refundStatus: isPaidOrder ? 'PENDING_COUNTER_REFUND' : null,
-  };
 }

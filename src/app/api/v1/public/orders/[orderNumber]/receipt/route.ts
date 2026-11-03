@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getReceiptData } from '@/lib/orders/receipt';
 import { apiSuccess, handleApiError } from '@/lib/api-response';
+import { checkRateLimit, getClientIp, rateLimitResponse } from '@/lib/rate-limit';
 
 export const dynamic = 'force-dynamic';
 
@@ -13,6 +14,11 @@ interface RouteParams {
 export async function GET(req: NextRequest, props: RouteParams) {
   const params = await props.params;
   try {
+    const ip = getClientIp(req);
+    const rateCheck = checkRateLimit(`receipt:${ip}`, { limit: 30, windowMs: 60000 });
+    if (!rateCheck.success) {
+      return rateLimitResponse(rateCheck);
+    }
     const sessionToken = req.headers.get('x-session-token') || undefined;
     const receiptToken =
       req.nextUrl.searchParams.get('receiptToken') ||

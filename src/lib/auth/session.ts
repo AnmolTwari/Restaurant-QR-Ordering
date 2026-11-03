@@ -33,11 +33,20 @@ export async function getCurrentUser(): Promise<AuthenticatedUser | null> {
       fullName: true,
       phone: true,
       isActive: true,
+      tokenVersion: true,
       createdAt: true,
     },
   });
 
   if (!user || !user.isActive) {
+    return null;
+  }
+
+  // Session revocation validation: ensure tokenVersion matches current database state
+  if (
+    payload.tokenVersion !== undefined &&
+    payload.tokenVersion !== user.tokenVersion
+  ) {
     return null;
   }
 

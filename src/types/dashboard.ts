@@ -49,6 +49,12 @@ export interface RestaurantTableData {
   tableNumber: string;
   capacity: number;
   status: TableStatus;
+  operationalState?: 'AVAILABLE' | 'OCCUPIED' | 'NEEDS_ATTENTION';
+  attentionReason?: string | null;
+  isFullyServed?: boolean;
+  hasActiveSession?: boolean;
+  activeSessionId?: string | null;
+  activeOrdersCount?: number;
   hasActiveQr: boolean;
   qrTokenInfo: { id: string; createdAt: string } | null;
   activeSessionsCount: number;

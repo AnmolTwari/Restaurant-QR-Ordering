@@ -220,8 +220,67 @@ export async function createSessionOrder(
 
   const orderNumber = generateOrderNumber();
 
-  // 4. Atomic transaction
+  // 4. Atomic transaction with session row lock to coordinate with table closure
   const createdOrder = await prisma.$transaction(async (tx) => {
+    // 4.1 Acquire row-level lock on tableSession to prevent race with session closure
+    let sessionRow: {
+      id: string;
+      restaurantId: string;
+      tableId: string;
+      status: string;
+      isActive: boolean;
+      expiresAt: Date;
+    } | null = null;
+
+    if (typeof tx.$queryRaw === 'function') {
+      try {
+        const rows = await tx.$queryRaw<
+          Array<{
+            id: string;
+            restaurantId: string;
+            tableId: string;
+            status: string;
+            isActive: boolean;
+            expiresAt: Date;
+          }>
+        >`
+          SELECT id, "restaurantId", "tableId", "status", "isActive", "expiresAt"
+          FROM "table_sessions"
+          WHERE id = ${session.id}
+          FOR UPDATE
+        `;
+        sessionRow = rows[0] || null;
+      } catch {
+        sessionRow = await tx.tableSession.findUnique({
+          where: { id: session.id },
+        });
+      }
+    } else {
+      sessionRow = await tx.tableSession.findUnique({
+        where: { id: session.id },
+      });
+    }
+
+    const now = new Date();
+
+    // 4.2 Authoritative in-transaction verification of dining session state
+    // Enforces: session ID matches, restaurant/table match, status is ACTIVE, isActive is true, not expired
+    if (
+      !sessionRow ||
+      sessionRow.id !== session.id ||
+      sessionRow.restaurantId !== restaurant.id ||
+      sessionRow.tableId !== table.id ||
+      !sessionRow.isActive ||
+      sessionRow.status !== 'ACTIVE' ||
+      new Date(sessionRow.expiresAt) <= now
+    ) {
+      throw new OrderOperationError(
+        'SESSION_CLOSED_OR_EXPIRED',
+        'Your dining session has ended or the table has been cleared. Please scan the table QR code to start a new session.',
+        409,
+      );
+    }
+
     const order = await tx.order.create({
       data: {
         restaurantId: restaurant.id,

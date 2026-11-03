@@ -232,6 +232,9 @@ describe('Phase 4: Dining Session Verification for Orders', () => {
       sessionTokenHash: 'mock-hash',
       expiresAt: futureDate,
       isActive: true,
+      status: 'ACTIVE',
+      closedAt: null,
+      closedByUserId: null,
       createdAt: new Date(),
       updatedAt: new Date(),
     });
@@ -253,6 +256,9 @@ describe('Phase 4: Dining Session Verification for Orders', () => {
       sessionTokenHash: 'mock-hash',
       expiresAt: pastDate,
       isActive: true,
+      status: 'ACTIVE',
+      closedAt: null,
+      closedByUserId: null,
       createdAt: new Date(),
       updatedAt: new Date(),
     });
@@ -271,6 +277,9 @@ describe('Phase 4: Dining Session Verification for Orders', () => {
       sessionTokenHash: 'mock-hash',
       expiresAt: futureDate,
       isActive: false, // DEACTIVATED
+      status: 'CLOSED',
+      closedAt: new Date(),
+      closedByUserId: null,
       createdAt: new Date(),
       updatedAt: new Date(),
     });

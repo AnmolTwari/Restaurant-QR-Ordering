@@ -7,6 +7,7 @@ import {
   attachTableSessionCookie,
   getTableSessionTokenFromCookies,
   TABLE_SESSION_COOKIE_NAME,
+  TableSessionOccupiedError,
 } from '@/lib/qr/session';
 import { apiSuccess, handleApiError } from '@/lib/api-response';
 import { checkRateLimit, getClientIp, rateLimitResponse } from '@/lib/rate-limit';
@@ -129,6 +130,18 @@ export async function POST(req: NextRequest) {
 
     return response;
   } catch (error) {
+    if (error instanceof TableSessionOccupiedError) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: {
+            code: error.code,
+            message: error.message,
+          },
+        },
+        { status: error.statusCode },
+      );
+    }
     return handleApiError(error);
   }
 }
@@ -189,6 +202,18 @@ export async function GET(req: NextRequest) {
 
     return response;
   } catch (error) {
+    if (error instanceof TableSessionOccupiedError) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: {
+            code: error.code,
+            message: error.message,
+          },
+        },
+        { status: error.statusCode },
+      );
+    }
     return handleApiError(error);
   }
 }

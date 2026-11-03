@@ -30,6 +30,20 @@ export function useTableManagement({
   const [qrMenuUrl, setQrMenuUrl] = useState('');
   const [qrLoading, setQrLoading] = useState(false);
 
+  // Clear Table Modal State
+  const [showClearModal, setShowClearModal] = useState(false);
+  const [clearingTable, setClearingTable] = useState<RestaurantTableData | null>(null);
+
+  function handleOpenClearModal(table: RestaurantTableData) {
+    setClearingTable(table);
+    setShowClearModal(true);
+  }
+
+  function handleCloseClearModal() {
+    setShowClearModal(false);
+    setClearingTable(null);
+  }
+
   async function openQrModalWithToken(
     table: RestaurantTableData,
     rawToken: string,
@@ -225,5 +239,10 @@ export function useTableManagement({
     handleGenerateOrViewQr,
     handleRotateQr,
     handleRevokeQr,
+    showClearModal,
+    setShowClearModal,
+    clearingTable,
+    handleOpenClearModal,
+    handleCloseClearModal,
   };
 }

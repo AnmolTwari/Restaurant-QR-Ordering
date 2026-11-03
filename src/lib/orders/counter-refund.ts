@@ -137,7 +137,7 @@ export async function completeCounterRefund(params: CompleteCounterRefundParams)
         data: {
           paymentId: matchingPayment.id,
           provider: 'COUNTER',
-          eventId: `ref_counter_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+          eventId: `ref_counter_${order.id}_${order.refundAmount}`,
           eventType: 'counter.refund_completed',
           payload: {
             orderId: order.id,

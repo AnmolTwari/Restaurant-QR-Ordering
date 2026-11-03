@@ -69,6 +69,7 @@ model User {
   fullName     String
   phone        String?
   isActive     Boolean  @default(true)
+  tokenVersion Int      @default(1)
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
@@ -76,6 +77,7 @@ model User {
   orderStatusUpdates OrderStatusHistory[]
   cancelledOrderItems OrderItem[] @relation("CancelledOrderItems")
   completedOrderRefunds Order[]   @relation("CompletedOrderRefunds")
+  closedTableSessions TableSession[] @relation("ClosedTableSessions")
 
   @@map("users")
 }
@@ -199,20 +201,25 @@ model TableQrToken {
 }
 
 model TableSession {
-  id               String   @id @default(uuid())
+  id               String    @id @default(uuid())
   restaurantId     String
   tableId          String
-  sessionTokenHash String   @unique
+  sessionTokenHash String    @unique
   expiresAt        DateTime
-  isActive         Boolean  @default(true)
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
+  isActive         Boolean   @default(true)
+  status           String    @default("ACTIVE")
+  closedAt         DateTime?
+  closedByUserId   String?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
 
-  restaurant Restaurant      @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
-  table      RestaurantTable @relation(fields: [tableId], references: [id], onDelete: Cascade)
-  orders     Order[]
+  restaurant   Restaurant      @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  table        RestaurantTable @relation(fields: [tableId], references: [id], onDelete: Cascade)
+  closedByUser User?           @relation("ClosedTableSessions", fields: [closedByUserId], references: [id], onDelete: SetNull)
+  orders       Order[]
 
   @@index([restaurantId, tableId, isActive])
+  @@index([restaurantId, tableId, status])
   @@map("table_sessions")
 }
 
@@ -301,6 +308,8 @@ model Payment {
 
   @@index([restaurantId, status])
   @@index([orderId])
+  @@index([gatewayOrderId])
+  @@index([gatewayTransactionId])
   @@map("payments")
 }
 

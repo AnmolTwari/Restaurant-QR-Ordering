@@ -9,6 +9,7 @@ import {
 } from '@/lib/payments/razorpay';
 import { recordOnlinePaymentVerified } from '@/lib/payments/settlement';
 import { apiSuccess, handleApiError } from '@/lib/api-response';
+import { checkRateLimit, getClientIp, rateLimitResponse } from '@/lib/rate-limit';
 
 export const dynamic = 'force-dynamic';
 
@@ -27,6 +28,12 @@ const VerifyPaymentSchema = z.object({
 export async function POST(req: NextRequest, props: RouteParams) {
   const params = await props.params;
   try {
+    const ip = getClientIp(req);
+    const rateCheck = checkRateLimit(`pay-verify:${ip}`, { limit: 15, windowMs: 60000 });
+    if (!rateCheck.success) {
+      return rateLimitResponse(rateCheck);
+    }
+
     const sessionToken = req.headers.get('x-session-token') || undefined;
     const verifiedSession = await verifyActiveTableSession(sessionToken);
 
@@ -68,12 +75,13 @@ export async function POST(req: NextRequest, props: RouteParams) {
       );
     }
 
-    // 2. Locate order
+    // 2. Locate order bound to active session
     const order = await prisma.order.findFirst({
       where: {
         orderNumber: params.orderNumber.toUpperCase(),
         restaurantId: verifiedSession.restaurantId,
         tableId: verifiedSession.tableId,
+        sessionId: verifiedSession.session.id,
       },
     });
 
@@ -105,7 +113,7 @@ export async function POST(req: NextRequest, props: RouteParams) {
           order_id?: string;
         };
 
-        if (gatewayPayment.status !== 'captured' && gatewayPayment.status !== 'authorized') {
+        if (gatewayPayment.status !== 'captured') {
           return NextResponse.json(
             {
               success: false,

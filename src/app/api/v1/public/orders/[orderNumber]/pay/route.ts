@@ -47,6 +47,7 @@ export async function POST(req: NextRequest, props: RouteParams) {
         orderNumber: params.orderNumber.toUpperCase(),
         restaurantId: verifiedSession.restaurantId,
         tableId: verifiedSession.tableId,
+        sessionId: verifiedSession.session.id,
       },
       include: {
         restaurant: {
@@ -110,37 +111,46 @@ export async function POST(req: NextRequest, props: RouteParams) {
       },
     });
 
-    // Record or update pending payment record
-    const existingPending = await prisma.payment.findFirst({
-      where: {
-        orderId: order.id,
-        status: PaymentStatus.PENDING,
-      },
-    });
-
-    if (existingPending) {
-      await prisma.payment.update({
-        where: { id: existingPending.id },
-        data: {
-          gatewayOrderId: gatewayOrder.id,
-          gatewayProvider: 'RAZORPAY',
-          amount: payableAmount,
-        },
-      });
-    } else {
-      await prisma.payment.create({
-        data: {
-          restaurantId: order.restaurantId,
+    // Record or update pending payment record transactionally
+    await prisma.$transaction(async (tx) => {
+      const existingPending = await tx.payment.findFirst({
+        where: {
           orderId: order.id,
-          amount: payableAmount,
-          currency: order.restaurant.currency || 'INR',
-          method: PaymentMethod.ONLINE,
           status: PaymentStatus.PENDING,
-          gatewayProvider: 'RAZORPAY',
-          gatewayOrderId: gatewayOrder.id,
         },
       });
-    }
+
+      if (existingPending) {
+        await tx.payment.update({
+          where: { id: existingPending.id },
+          data: {
+            gatewayOrderId: gatewayOrder.id,
+            gatewayProvider: 'RAZORPAY',
+            amount: payableAmount,
+          },
+        });
+      } else {
+        await tx.payment.create({
+          data: {
+            restaurantId: order.restaurantId,
+            orderId: order.id,
+            amount: payableAmount,
+            currency: order.restaurant.currency || 'INR',
+            method: PaymentMethod.ONLINE,
+            status: PaymentStatus.PENDING,
+            gatewayProvider: 'RAZORPAY',
+            gatewayOrderId: gatewayOrder.id,
+          },
+        });
+      }
+
+      if (order.paymentStatus === PaymentStatus.UNPAID) {
+        await tx.order.update({
+          where: { id: order.id },
+          data: { paymentStatus: PaymentStatus.PENDING },
+        });
+      }
+    });
 
     const response = apiSuccess({
       gatewayOrderId: gatewayOrder.id,

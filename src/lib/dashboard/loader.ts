@@ -103,6 +103,29 @@ export async function getDashboardInitialData(): Promise<DashboardInitialDataRes
           orderBy: { createdAt: 'desc' },
           take: 1,
         },
+        sessions: {
+          where: {
+            isActive: true,
+            status: 'ACTIVE',
+            expiresAt: { gt: new Date() },
+          },
+          include: {
+            orders: {
+              select: {
+                id: true,
+                orderNumber: true,
+                orderStatus: true,
+                paymentStatus: true,
+                total: true,
+                refundStatus: true,
+                refundAmount: true,
+                refundedAtCounterAmount: true,
+              },
+            },
+          },
+          take: 1,
+          orderBy: { createdAt: 'desc' },
+        },
         _count: {
           select: {
             sessions: { where: { isActive: true } },
@@ -137,19 +160,76 @@ export async function getDashboardInitialData(): Promise<DashboardInitialDataRes
     category: i.category,
   }));
 
-  const tables: RestaurantTableData[] = tablesRaw.map((t) => ({
-    id: t.id,
-    tableNumber: t.tableNumber,
-    capacity: t.capacity,
-    status: t.status as TableStatus,
-    hasActiveQr: t.qrTokens.length > 0,
-    qrTokenInfo: t.qrTokens[0]
-      ? { id: t.qrTokens[0].id, createdAt: t.qrTokens[0].createdAt.toISOString() }
-      : null,
-    activeSessionsCount: t._count.sessions,
-    totalOrdersCount: t._count.orders,
-    createdAt: t.createdAt.toISOString(),
-  }));
+  const tables: RestaurantTableData[] = tablesRaw.map((t) => {
+    const activeSession = t.sessions?.[0];
+    let operationalState: 'AVAILABLE' | 'OCCUPIED' | 'NEEDS_ATTENTION' =
+      t.status === 'AVAILABLE' ? 'AVAILABLE' : 'OCCUPIED';
+    let attentionReason: string | null = null;
+    let isFullyServed = false;
+
+    if (t.status === 'INACTIVE') {
+      operationalState = 'AVAILABLE';
+    } else if (!activeSession) {
+      operationalState = 'AVAILABLE';
+    } else {
+      const orders = activeSession.orders || [];
+      const hasUnpaid = orders.some(
+        (o) =>
+          o.total > 0 &&
+          o.orderStatus !== 'CANCELLED' &&
+          o.paymentStatus !== 'PAID' &&
+          o.paymentStatus !== 'PARTIALLY_REFUNDED' &&
+          o.paymentStatus !== 'REFUNDED',
+      );
+      const hasReady = orders.some((o) => o.orderStatus === 'READY');
+      const hasPendingRefund = orders.some(
+        (o) =>
+          o.refundStatus === 'PENDING_COUNTER_REFUND' &&
+          o.refundAmount - o.refundedAtCounterAmount > 0,
+      );
+      isFullyServed =
+        orders.length > 0 &&
+        orders.every(
+          (o) => o.orderStatus === 'SERVED' || o.orderStatus === 'CANCELLED',
+        );
+
+      if (hasUnpaid) {
+        operationalState = 'NEEDS_ATTENTION';
+        attentionReason = 'Unpaid Orders';
+      } else if (hasPendingRefund) {
+        operationalState = 'NEEDS_ATTENTION';
+        attentionReason = 'Pending Refund';
+      } else if (hasReady) {
+        operationalState = 'NEEDS_ATTENTION';
+        attentionReason = 'Ready to Serve';
+      } else if (isFullyServed) {
+        operationalState = 'NEEDS_ATTENTION';
+        attentionReason = 'Ready to Clear Table';
+      } else {
+        operationalState = 'OCCUPIED';
+      }
+    }
+
+    return {
+      id: t.id,
+      tableNumber: t.tableNumber,
+      capacity: t.capacity,
+      status: t.status as TableStatus,
+      operationalState,
+      attentionReason,
+      isFullyServed,
+      hasActiveSession: Boolean(activeSession),
+      activeSessionId: activeSession?.id || null,
+      activeOrdersCount: activeSession?.orders?.length || 0,
+      hasActiveQr: t.qrTokens.length > 0,
+      qrTokenInfo: t.qrTokens[0]
+        ? { id: t.qrTokens[0].id, createdAt: t.qrTokens[0].createdAt.toISOString() }
+        : null,
+      activeSessionsCount: t._count.sessions,
+      totalOrdersCount: t._count.orders,
+      createdAt: t.createdAt.toISOString(),
+    };
+  });
 
   return {
     authenticated: true,
