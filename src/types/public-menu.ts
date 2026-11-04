@@ -14,6 +14,17 @@ export interface PublicCategory {
   items: PublicMenuItem[];
 }
 
+export interface PublicBillingConfig {
+  gstEnabled: boolean;
+  taxInclusive: boolean;
+  gstRate: number; // in basis points (500 = 5.00%)
+  serviceChargeEnabled: boolean;
+  serviceChargeRate: number;
+  serviceChargeType: 'PERCENTAGE' | 'FIXED';
+  packagingChargeEnabled: boolean;
+  packagingChargeAmount: number;
+}
+
 export interface PublicMenuData {
   restaurant: {
     name: string;
@@ -22,6 +33,7 @@ export interface PublicMenuData {
     address: string | null;
     phone: string | null;
     currency: string;
+    billingConfig?: PublicBillingConfig;
   };
   table: {
     id: string;

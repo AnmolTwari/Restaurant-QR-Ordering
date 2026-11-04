@@ -102,6 +102,8 @@ model Restaurant {
   sessions    TableSession[]
   orders      Order[]
   payments    Payment[]
+  billingConfig RestaurantBillingConfig?
+  invoices    Invoice[]
 
   @@map("restaurants")
 }
@@ -235,6 +237,16 @@ model Order {
   subtotal       Int // in minor units
   tax            Int           @default(0) // in minor units
   total          Int // in minor units
+  cgst           Int           @default(0) // in minor units
+  sgst           Int           @default(0) // in minor units
+  igst           Int           @default(0) // in minor units
+  serviceCharge  Int           @default(0) // in minor units
+  packagingCharge Int          @default(0) // in minor units
+  customCharge   Int           @default(0) // in minor units
+  discountAmount Int           @default(0) // in minor units
+  taxableAmount  Int           @default(0) // in minor units
+  billingSnapshot Json?
+  invoiceNumber  String?
   refundAmount            Int           @default(0) // in minor units
   refundedAtCounterAmount Int           @default(0) // in minor units
   refundStatus            String?
@@ -252,6 +264,7 @@ model Order {
   items         OrderItem[]
   payments      Payment[]
   statusHistory OrderStatusHistory[]
+  invoice       Invoice?
 
   @@unique([restaurantId, orderNumber])
   @@index([restaurantId, orderStatus])
@@ -342,4 +355,77 @@ model OrderStatusHistory {
 
   @@index([orderId])
   @@map("order_status_history")
+}
+
+model RestaurantBillingConfig {
+  id                    String   @id @default(uuid())
+  restaurantId          String   @unique
+  legalName             String?
+  displayName           String?
+  gstin                 String?
+  address               String?
+  state                 String?  @default("Maharashtra")
+  stateCode             String?  @default("27")
+  phone                 String?
+  email                 String?
+  invoicePrefix         String   @default("INV-")
+  invoiceNextNumber     Int      @default(1001)
+  invoiceNumberPadding  Int      @default(4)
+  gstEnabled            Boolean  @default(false)
+  taxInclusive          Boolean  @default(false)
+  gstRate               Int      @default(500) // in basis points (500 = 5.00%)
+  cgstRate              Int      @default(250) // in basis points (250 = 2.50%)
+  sgstRate              Int      @default(250) // in basis points (250 = 2.50%)
+  igstRate              Int      @default(500) // in basis points (500 = 5.00%)
+  serviceChargeEnabled  Boolean  @default(false)
+  serviceChargeRate     Int      @default(0) // in basis points (e.g. 500 = 5%) or minor units if fixed
+  serviceChargeType     String   @default("PERCENTAGE") // PERCENTAGE | FIXED
+  serviceChargeTaxable  Boolean  @default(true)
+  packagingChargeEnabled Boolean @default(false)
+  packagingChargeAmount Int      @default(0) // in minor units paise
+  packagingChargeType   String   @default("FIXED") // FIXED | PERCENTAGE
+  packagingChargeTaxable Boolean @default(true)
+  customChargeName      String?
+  customChargeEnabled   Boolean  @default(false)
+  customChargeAmount    Int      @default(0) // in minor units paise
+  customChargeType      String   @default("FIXED") // FIXED | PERCENTAGE
+  customChargeTaxable   Boolean  @default(false)
+  defaultDiscountType   String   @default("PERCENTAGE") // PERCENTAGE | FIXED
+  maxDiscountPercent    Int      @default(100)
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  restaurant Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+
+  @@map("restaurant_billing_configs")
+}
+
+model Invoice {
+  id              String   @id @default(uuid())
+  restaurantId    String
+  orderId         String   @unique
+  invoiceNumber   String
+  subtotal        Int // in minor units
+  discountAmount  Int      @default(0) // in minor units
+  taxableAmount   Int // in minor units
+  cgst            Int      @default(0) // in minor units
+  sgst            Int      @default(0) // in minor units
+  igst            Int      @default(0) // in minor units
+  totalTax        Int      @default(0) // in minor units
+  serviceCharge   Int      @default(0) // in minor units
+  packagingCharge Int      @default(0) // in minor units
+  customCharge    Int      @default(0) // in minor units
+  totalAmount     Int // in minor units
+  currency        String   @default("INR")
+  billingSnapshot Json
+  customerPhone   String?
+  generatedAt     DateTime @default(now())
+
+  restaurant Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  order      Order      @relation(fields: [orderId], references: [id], onDelete: Restrict)
+
+  @@unique([restaurantId, invoiceNumber])
+  @@index([restaurantId, invoiceNumber])
+  @@index([restaurantId, generatedAt])
+  @@map("invoices")
 }

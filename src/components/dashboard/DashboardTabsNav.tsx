@@ -9,6 +9,7 @@ import {
   Menu,
   ClipboardList,
   CreditCard,
+  Receipt,
 } from 'lucide-react';
 import type { DashboardTab, RestaurantSummary } from '@/types/dashboard';
 
@@ -156,6 +157,21 @@ export function DashboardTabsNav({
             <span>Payments & Reconciliation</span>
             <span className="text-[10px] px-1.5 py-0.2 bg-orange-950/60 text-orange-400 border border-orange-500/30 rounded font-semibold">
               P5
+            </span>
+          </button>
+
+          <button
+            onClick={() => onSelectTab('billing')}
+            className={`px-4 py-2.5 text-xs sm:text-sm font-medium border-b-2 transition-colors whitespace-nowrap flex items-center gap-2 ${
+              activeTab === 'billing'
+                ? 'border-orange-500 text-orange-400'
+                : 'border-transparent text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            <Receipt className="w-4 h-4" />
+            <span>Billing & Taxes</span>
+            <span className="text-[10px] px-1.5 py-0.2 bg-emerald-950/60 text-emerald-400 border border-emerald-500/30 rounded font-semibold">
+              P9
             </span>
           </button>
         </div>

@@ -115,6 +115,15 @@ export interface StaffOrderDetails {
   refundCompletedByUserId?: string | null;
   notes: string | null;
   idempotencyKey: string | null;
+  cgst?: number;
+  sgst?: number;
+  igst?: number;
+  serviceCharge?: number;
+  packagingCharge?: number;
+  customCharge?: number;
+  discountAmount?: number;
+  taxableAmount?: number;
+  invoiceNumber?: string | null;
   createdAt: string;
   updatedAt: string;
   table: {

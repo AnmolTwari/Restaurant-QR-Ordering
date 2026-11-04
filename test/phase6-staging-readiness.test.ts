@@ -16,7 +16,7 @@ import {
   SettlementError,
 } from '@/lib/payments/settlement';
 import { signAuthToken } from '@/lib/auth/jwt';
-import { OrderStatus, PaymentStatus, UserRole } from '@/types';
+import { OrderStatus, PaymentStatus, PaymentMethod, UserRole } from '@/types';
 
 describe('Phase 6: Staging Readiness — Scoped Tokens, Concurrency OCC & Credentials', () => {
   beforeEach(() => {
@@ -102,6 +102,7 @@ describe('Phase 6: Staging Readiness — Scoped Tokens, Concurrency OCC & Creden
         total: 25000,
         orderStatus: OrderStatus.SERVED,
         paymentStatus: PaymentStatus.UNPAID,
+        paymentMethod: PaymentMethod.COUNTER,
         restaurant: { id: 'rest_occ', currency: 'INR' },
       };
 
@@ -141,6 +142,7 @@ describe('Phase 6: Staging Readiness — Scoped Tokens, Concurrency OCC & Creden
         orderNumber: 'ORD-OCC-02',
         total: 30000,
         paymentStatus: PaymentStatus.UNPAID,
+        paymentMethod: PaymentMethod.COUNTER,
         restaurant: { id: 'rest_occ', currency: 'INR' },
       };
 

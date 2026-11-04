@@ -3,6 +3,7 @@
 import React from 'react';
 import { X, Trash2, Plus, Minus, UtensilsCrossed, Loader2, ArrowRight } from 'lucide-react';
 import type { CartItem } from '@/types/orders';
+import type { PublicBillingConfig } from '@/types/public-menu';
 import { formatMoney } from '@/lib/formatters';
 
 interface CartDrawerProps {
@@ -11,6 +12,7 @@ interface CartDrawerProps {
   orderNotes: string;
   currency?: string;
   subtotal: number;
+  billingConfig?: PublicBillingConfig;
   submitting: boolean;
   disabledReason?: string | null;
   onClose: () => void;
@@ -27,6 +29,7 @@ export function CartDrawer({
   orderNotes,
   currency = 'INR',
   subtotal,
+  billingConfig,
   submitting,
   disabledReason,
   onClose,
@@ -37,6 +40,38 @@ export function CartDrawer({
   onSubmitOrder,
 }: CartDrawerProps) {
   if (!isOpen) return null;
+
+  // Additional charges & GST preview
+  let serviceCharge = 0;
+  if (billingConfig?.serviceChargeEnabled && billingConfig.serviceChargeRate > 0) {
+    if (billingConfig.serviceChargeType === 'PERCENTAGE') {
+      serviceCharge = Math.round((subtotal * billingConfig.serviceChargeRate) / 10000);
+    } else {
+      serviceCharge = billingConfig.serviceChargeRate;
+    }
+  }
+
+  let packagingCharge = 0;
+  if (billingConfig?.packagingChargeEnabled && billingConfig.packagingChargeAmount > 0) {
+    packagingCharge = billingConfig.packagingChargeAmount;
+  }
+
+  let estimatedTax = 0;
+  if (billingConfig?.gstEnabled && billingConfig.gstRate > 0) {
+    if (billingConfig.taxInclusive) {
+      // Included in prices
+      const taxableBase = Math.round((subtotal * 10000) / (10000 + billingConfig.gstRate));
+      estimatedTax = subtotal - taxableBase;
+    } else {
+      // Added on top
+      const taxableBase = subtotal + serviceCharge + packagingCharge;
+      estimatedTax = Math.round((taxableBase * billingConfig.gstRate) / 10000);
+    }
+  }
+
+  const estimatedTotal = billingConfig?.taxInclusive
+    ? subtotal + serviceCharge + packagingCharge
+    : subtotal + serviceCharge + packagingCharge + estimatedTax;
 
   return (
     <div className="fixed inset-0 z-50 flex justify-end bg-black/80 backdrop-blur-sm animate-fade-in">
@@ -144,25 +179,59 @@ export function CartDrawer({
         {/* Footer & Submit */}
         {items.length > 0 && (
           <div className="p-4 sm:p-5 border-t border-slate-800 bg-slate-900/40 space-y-3">
-            <div className="space-y-1 text-xs">
+            <div className="space-y-1.5 text-xs">
               <div className="flex items-center justify-between text-slate-400">
-                <span>Subtotal</span>
+                <span>Items Subtotal</span>
                 <span className="font-mono text-slate-200">{formatMoney(subtotal, currency)}</span>
               </div>
-              <div className="flex items-center justify-between text-slate-400">
-                <span>Taxes & Fees</span>
-                <span className="font-mono text-slate-200">{formatMoney(0, currency)}</span>
-              </div>
+
+              {serviceCharge > 0 && (
+                <div className="flex items-center justify-between text-slate-400">
+                  <span>
+                    Service Charge{' '}
+                    {billingConfig?.serviceChargeType === 'PERCENTAGE'
+                      ? `(${billingConfig.serviceChargeRate / 100}%)`
+                      : ''}
+                  </span>
+                  <span className="font-mono text-slate-200">
+                    {formatMoney(serviceCharge, currency)}
+                  </span>
+                </div>
+              )}
+
+              {packagingCharge > 0 && (
+                <div className="flex items-center justify-between text-slate-400">
+                  <span>Packaging Charge</span>
+                  <span className="font-mono text-slate-200">
+                    {formatMoney(packagingCharge, currency)}
+                  </span>
+                </div>
+              )}
+
+              {billingConfig?.gstEnabled && billingConfig.gstRate > 0 && (
+                <div className="flex items-center justify-between text-slate-400">
+                  <span>
+                    GST ({billingConfig.gstRate / 100}%)
+                    {billingConfig.taxInclusive ? ' (Included in item prices)' : ''}
+                  </span>
+                  <span className="font-mono text-slate-200">
+                    {billingConfig.taxInclusive
+                      ? `(${formatMoney(estimatedTax, currency)})`
+                      : formatMoney(estimatedTax, currency)}
+                  </span>
+                </div>
+              )}
+
               <div className="flex items-center justify-between text-sm font-bold text-white pt-2 border-t border-slate-800">
                 <span>Estimated Total</span>
                 <span className="font-mono text-orange-400 text-base">
-                  {formatMoney(subtotal, currency)}
+                  {formatMoney(estimatedTotal, currency)}
                 </span>
               </div>
             </div>
 
             <p className="text-[10px] text-slate-500 text-center">
-              Items and totals will be confirmed and logged by server-side verification.
+              Final bill and taxes are confirmed by server-authoritative verification upon order.
             </p>
 
             <button

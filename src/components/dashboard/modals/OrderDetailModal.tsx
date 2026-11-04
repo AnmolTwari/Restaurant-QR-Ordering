@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useState } from 'react';
 import {
   X,
   CheckCircle2,
@@ -9,16 +9,19 @@ import {
   UtensilsCrossed,
   History,
   CreditCard,
+  Share2,
 } from 'lucide-react';
 import { OrderStatus } from '@/types';
 import type { StaffOrderDetails } from '@/types/orders';
 import { formatMoney } from '@/lib/formatters';
 import { OrderCounterRefundCard } from './OrderCounterRefundCard';
+import { WhatsAppShareModal } from './WhatsAppShareModal';
 
 interface OrderDetailModalProps {
   isOpen: boolean;
   order: StaffOrderDetails | null;
   currency?: string;
+  restaurantName?: string;
   actionLoading: boolean;
   onClose: () => void;
   onUpdateStatus: (orderId: string, status: OrderStatus) => Promise<void>;
@@ -31,6 +34,7 @@ export function OrderDetailModal({
   isOpen,
   order,
   currency = 'INR',
+  restaurantName,
   actionLoading,
   onClose,
   onUpdateStatus,
@@ -38,7 +42,12 @@ export function OrderDetailModal({
   onSettleCounter,
   onRefundCounter,
 }: OrderDetailModalProps) {
+  const [showWhatsApp, setShowWhatsApp] = useState(false);
+  const [currentInvoiceNumber, setCurrentInvoiceNumber] = useState<string | null>(null);
+
   if (!isOpen || !order) return null;
+
+  const displayInvoiceNumber = currentInvoiceNumber || order.invoiceNumber;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
@@ -46,11 +55,16 @@ export function OrderDetailModal({
         {/* Header */}
         <div className="flex items-center justify-between border-b border-slate-800 pb-4">
           <div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               <span className="text-xl font-black text-white">{order.orderNumber}</span>
               <span className="text-xs px-2.5 py-0.5 rounded-full bg-orange-500/10 text-orange-400 font-bold border border-orange-500/20">
                 Table {order.table.tableNumber}
               </span>
+              {displayInvoiceNumber && (
+                <span className="text-xs px-2.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 font-mono font-bold border border-emerald-500/20">
+                  {displayInvoiceNumber}
+                </span>
+              )}
             </div>
             <p className="text-xs text-slate-400 mt-0.5">
               Received at {new Date(order.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} •{' '}
@@ -158,6 +172,62 @@ export function OrderDetailModal({
                 </div>
               );
             })}
+
+            {/* Charges and Tax Breakdown */}
+            <div className="pt-2.5 space-y-1 text-xs text-slate-400 border-t border-slate-800/80">
+              <div className="flex justify-between">
+                <span>Items Subtotal</span>
+                <span className="font-mono text-slate-300">{formatMoney(order.subtotal, currency)}</span>
+              </div>
+              {(order.discountAmount ?? 0) > 0 && (
+                <div className="flex justify-between text-emerald-400">
+                  <span>Discount</span>
+                  <span className="font-mono">-{formatMoney(order.discountAmount!, currency)}</span>
+                </div>
+              )}
+              {(order.serviceCharge ?? 0) > 0 && (
+                <div className="flex justify-between">
+                  <span>Service Charge</span>
+                  <span className="font-mono text-slate-300">{formatMoney(order.serviceCharge!, currency)}</span>
+                </div>
+              )}
+              {(order.packagingCharge ?? 0) > 0 && (
+                <div className="flex justify-between">
+                  <span>Packaging Charge</span>
+                  <span className="font-mono text-slate-300">{formatMoney(order.packagingCharge!, currency)}</span>
+                </div>
+              )}
+              {(order.customCharge ?? 0) > 0 && (
+                <div className="flex justify-between">
+                  <span>Additional Charge</span>
+                  <span className="font-mono text-slate-300">{formatMoney(order.customCharge!, currency)}</span>
+                </div>
+              )}
+              {(order.cgst ?? 0) > 0 && (
+                <div className="flex justify-between">
+                  <span>CGST</span>
+                  <span className="font-mono text-slate-300">{formatMoney(order.cgst!, currency)}</span>
+                </div>
+              )}
+              {(order.sgst ?? 0) > 0 && (
+                <div className="flex justify-between">
+                  <span>SGST</span>
+                  <span className="font-mono text-slate-300">{formatMoney(order.sgst!, currency)}</span>
+                </div>
+              )}
+              {(order.igst ?? 0) > 0 && (
+                <div className="flex justify-between">
+                  <span>IGST</span>
+                  <span className="font-mono text-slate-300">{formatMoney(order.igst!, currency)}</span>
+                </div>
+              )}
+              {!(order.cgst || order.sgst || order.igst) && (order.tax ?? 0) > 0 && (
+                <div className="flex justify-between">
+                  <span>Taxes</span>
+                  <span className="font-mono text-slate-300">{formatMoney(order.tax, currency)}</span>
+                </div>
+              )}
+            </div>
 
             <div className="pt-3 mt-2 flex items-center justify-between text-sm font-bold text-white border-t border-slate-800">
               <span>Payable Total</span>
@@ -274,6 +344,18 @@ export function OrderDetailModal({
                 <span>Settle Counter ({formatMoney(order.total, currency)})</span>
               </button>
             )}
+
+            {order.orderStatus !== OrderStatus.CANCELLED && (
+              <button
+                type="button"
+                onClick={() => setShowWhatsApp(true)}
+                className="py-2 px-3.5 rounded-xl bg-emerald-600/90 hover:bg-emerald-500 text-white font-bold text-xs flex items-center gap-1.5 shadow-sm transition-colors"
+                title="Share digital invoice on WhatsApp"
+              >
+                <Share2 className="w-3.5 h-3.5" />
+                <span>Share WhatsApp</span>
+              </button>
+            )}
           </div>
 
           <button
@@ -284,6 +366,18 @@ export function OrderDetailModal({
           </button>
         </div>
       </div>
+
+      <WhatsAppShareModal
+        isOpen={showWhatsApp}
+        orderId={order.id}
+        orderNumber={order.orderNumber}
+        restaurantId={order.restaurantId}
+        restaurantName={restaurantName}
+        totalFormatted={formatMoney(order.total, currency)}
+        initialInvoiceNumber={displayInvoiceNumber}
+        onClose={() => setShowWhatsApp(false)}
+        onInvoiceAssigned={(invNum) => setCurrentInvoiceNumber(invNum)}
+      />
     </div>
   );
 }

@@ -8,6 +8,7 @@ import {
   AlertCircle,
   Receipt as ReceiptIcon,
   ArrowLeft,
+  FileText,
 } from 'lucide-react';
 import { formatMoney } from '@/lib/formatters';
 import { getReceiptData } from '@/lib/orders/receipt';
@@ -53,54 +54,93 @@ export default async function CustomerReceiptPage(props: PageProps) {
 
   const receipt = result.receipt;
   const isPaid = receipt.order.paymentStatus === 'PAID';
+  const isRefunded =
+    receipt.order.paymentStatus === 'REFUNDED' ||
+    receipt.order.paymentStatus === 'PARTIALLY_REFUNDED';
   const currency = receipt.pricing.currency || 'INR';
 
   return (
     <div className="min-h-screen bg-slate-100 py-6 px-4 sm:px-6">
-      {/* Top action bar - Client interactive component */}
-      <ReceiptActions restaurantSlug={params.slug} />
+      {/* Top action bar with WhatsApp share */}
+      <ReceiptActions
+        restaurantSlug={params.slug}
+        restaurantName={receipt.restaurant.name}
+        orderNumber={receipt.order.orderNumber}
+        invoiceNumber={receipt.order.invoiceNumber}
+        totalFormatted={formatMoney(receipt.pricing.total, currency)}
+      />
 
-      {/* Main Printable Receipt Card (SSR Pre-rendered) */}
+      {/* Main Printable Bill / Invoice Card */}
       <div
         id="printable-receipt"
         className="max-w-md mx-auto bg-white rounded-2xl shadow-sm border border-slate-200 p-6 sm:p-8 print:border-none print:shadow-none print:p-0 print:max-w-none text-slate-800"
       >
-        {/* Header */}
+        {/* Header with Business & GST details */}
         <div className="text-center pb-6 border-b border-dashed border-slate-300">
-          <div className="w-12 h-12 rounded-full bg-indigo-50 text-indigo-600 flex items-center justify-center mx-auto mb-2 print:hidden">
+          <div className="w-12 h-12 rounded-full bg-orange-50 text-orange-600 flex items-center justify-center mx-auto mb-2 print:hidden">
             <ReceiptIcon className="w-6 h-6" />
           </div>
+
           <h1 className="text-xl font-bold tracking-tight text-slate-900">
             {receipt.restaurant.name}
           </h1>
+
+          {receipt.restaurant.legalName &&
+            receipt.restaurant.legalName !== receipt.restaurant.name && (
+              <p className="text-xs text-slate-500 font-medium">
+                ({receipt.restaurant.legalName})
+              </p>
+            )}
+
+          {receipt.restaurant.gstin && (
+            <div className="mt-1 inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-slate-100 border border-slate-200 text-[11px] font-mono text-slate-700">
+              <span className="font-semibold text-slate-900">GSTIN:</span>
+              <span>{receipt.restaurant.gstin}</span>
+            </div>
+          )}
+
           {receipt.restaurant.address && (
-            <p className="text-xs text-slate-500 mt-1 flex items-center justify-center gap-1">
-              <MapPin className="w-3 h-3 inline print:hidden" />
+            <p className="text-xs text-slate-500 mt-1.5 flex items-center justify-center gap-1">
+              <MapPin className="w-3 h-3 inline print:hidden text-slate-400" />
               {receipt.restaurant.address}
+              {receipt.restaurant.state && `, ${receipt.restaurant.state}`}
+              {receipt.restaurant.stateCode && ` (Code: ${receipt.restaurant.stateCode})`}
             </p>
           )}
+
           {receipt.restaurant.phone && (
-            <p className="text-xs text-slate-500 flex items-center justify-center gap-1">
-              <Phone className="w-3 h-3 inline print:hidden" />
+            <p className="text-xs text-slate-500 flex items-center justify-center gap-1 mt-0.5">
+              <Phone className="w-3 h-3 inline print:hidden text-slate-400" />
               {receipt.restaurant.phone}
             </p>
           )}
         </div>
 
-        {/* Order & Payment Meta */}
+        {/* Invoice & Order Meta */}
         <div className="py-4 border-b border-dashed border-slate-300 text-xs grid grid-cols-2 gap-y-2">
-          <div>
-            <span className="text-slate-500 block">Order Ref</span>
-            <span className="font-semibold text-slate-900">
-              #{receipt.order.orderNumber}
-            </span>
-          </div>
+          {receipt.order.invoiceNumber ? (
+            <div>
+              <span className="text-slate-500 block">Invoice No</span>
+              <span className="font-mono font-bold text-slate-900 text-xs">
+                {receipt.order.invoiceNumber}
+              </span>
+            </div>
+          ) : (
+            <div>
+              <span className="text-slate-500 block">Order Ref</span>
+              <span className="font-semibold text-slate-900">
+                #{receipt.order.orderNumber}
+              </span>
+            </div>
+          )}
+
           <div className="text-right">
             <span className="text-slate-500 block">Table</span>
             <span className="font-semibold text-slate-900">
               Table {receipt.order.tableNumber}
             </span>
           </div>
+
           <div>
             <span className="text-slate-500 block">Date & Time</span>
             <span className="text-slate-700">
@@ -115,19 +155,27 @@ export default async function CustomerReceiptPage(props: PageProps) {
               })}
             </span>
           </div>
+
           <div className="text-right">
             <span className="text-slate-500 block">Payment Status</span>
             <span
               className={`inline-flex items-center gap-1 font-semibold px-2 py-0.5 rounded-full text-[10px] ${
                 isPaid
                   ? 'bg-emerald-50 text-emerald-700'
+                  : isRefunded
+                  ? 'bg-purple-50 text-purple-700'
                   : 'bg-amber-50 text-amber-700'
               }`}
             >
               {isPaid ? (
                 <>
                   <CheckCircle2 className="w-3 h-3 inline" />
-                  PAID
+                  PAID (CASH)
+                </>
+              ) : isRefunded ? (
+                <>
+                  <CheckCircle2 className="w-3 h-3 inline" />
+                  {receipt.order.paymentStatus}
                 </>
               ) : (
                 <>
@@ -137,6 +185,16 @@ export default async function CustomerReceiptPage(props: PageProps) {
               )}
             </span>
           </div>
+
+          {receipt.order.invoiceNumber && (
+            <div className="col-span-2 pt-1 border-t border-slate-100 flex items-center justify-between">
+              <span className="text-slate-500">Order Reference:</span>
+              <span className="font-mono font-medium text-slate-700">
+                #{receipt.order.orderNumber}
+              </span>
+            </div>
+          )}
+
           {receipt.payment?.transactionReference && (
             <div className="col-span-2 pt-1 border-t border-slate-100">
               <span className="text-slate-500">Txn Ref: </span>
@@ -183,30 +241,90 @@ export default async function CustomerReceiptPage(props: PageProps) {
           </table>
         </div>
 
-        {/* Totals */}
+        {/* Transparent Bill Breakdown */}
         <div className="py-4 space-y-1.5 text-xs">
           <div className="flex justify-between text-slate-600">
-            <span>Subtotal</span>
+            <span>Items Subtotal</span>
             <span>{formatMoney(receipt.pricing.subtotal, currency)}</span>
           </div>
-          {receipt.pricing.tax > 0 && (
-            <div className="flex justify-between text-slate-600">
-              <span>Taxes & Charges</span>
-              <span>{formatMoney(receipt.pricing.tax, currency)}</span>
+
+          {receipt.pricing.discountAmount > 0 && (
+            <div className="flex justify-between text-emerald-600">
+              <span>Discount</span>
+              <span>-{formatMoney(receipt.pricing.discountAmount, currency)}</span>
             </div>
           )}
+
+          {receipt.pricing.taxableAmount > 0 && (
+            <div className="flex justify-between text-slate-500 text-[11px]">
+              <span>Taxable Value</span>
+              <span>{formatMoney(receipt.pricing.taxableAmount, currency)}</span>
+            </div>
+          )}
+
+          {receipt.pricing.serviceCharge > 0 && (
+            <div className="flex justify-between text-slate-600">
+              <span>Service Charge</span>
+              <span>{formatMoney(receipt.pricing.serviceCharge, currency)}</span>
+            </div>
+          )}
+
+          {receipt.pricing.packagingCharge > 0 && (
+            <div className="flex justify-between text-slate-600">
+              <span>Packaging Charge</span>
+              <span>{formatMoney(receipt.pricing.packagingCharge, currency)}</span>
+            </div>
+          )}
+
+          {receipt.pricing.customCharge > 0 && (
+            <div className="flex justify-between text-slate-600">
+              <span>Additional Charge</span>
+              <span>{formatMoney(receipt.pricing.customCharge, currency)}</span>
+            </div>
+          )}
+
+          {/* GST Breakdown */}
+          {receipt.pricing.cgst > 0 && (
+            <div className="flex justify-between text-slate-600">
+              <span>
+                CGST {receipt.pricing.isTaxInclusive ? '(Included)' : ''}
+              </span>
+              <span>{formatMoney(receipt.pricing.cgst, currency)}</span>
+            </div>
+          )}
+
+          {receipt.pricing.sgst > 0 && (
+            <div className="flex justify-between text-slate-600">
+              <span>
+                SGST {receipt.pricing.isTaxInclusive ? '(Included)' : ''}
+              </span>
+              <span>{formatMoney(receipt.pricing.sgst, currency)}</span>
+            </div>
+          )}
+
+          {receipt.pricing.igst > 0 && (
+            <div className="flex justify-between text-slate-600">
+              <span>
+                IGST {receipt.pricing.isTaxInclusive ? '(Included)' : ''}
+              </span>
+              <span>{formatMoney(receipt.pricing.igst, currency)}</span>
+            </div>
+          )}
+
           <div className="flex justify-between text-sm font-bold text-slate-900 pt-2 border-t border-slate-200">
-            <span>Total Amount</span>
-            <span>{formatMoney(receipt.pricing.total, currency)}</span>
+            <span>Total Payable</span>
+            <span className="font-mono text-base">
+              {formatMoney(receipt.pricing.total, currency)}
+            </span>
           </div>
         </div>
 
         {/* Footer / Disclaimer */}
-        <div className="pt-4 border-t border-dashed border-slate-300 text-center">
+        <div className="pt-4 border-t border-dashed border-slate-300 text-center space-y-1">
           <p className="text-[11px] text-slate-400 leading-tight">
             {receipt.disclaimer}
           </p>
-          <p className="text-[11px] text-slate-400 mt-2">
+          <p className="text-[11px] text-slate-500 pt-1">
             Thank you for dining with us!
           </p>
         </div>

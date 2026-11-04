@@ -21,6 +21,7 @@ import { MenuItemsTab } from '@/components/dashboard/tabs/MenuItemsTab';
 import { TablesTab } from '@/components/dashboard/tabs/TablesTab';
 import { OrdersTab } from '@/components/dashboard/tabs/OrdersTab';
 import { PaymentsTab } from '@/components/dashboard/tabs/PaymentsTab';
+import { BillingTab } from '@/components/dashboard/tabs/BillingTab';
 
 import { CategoryModal } from '@/components/dashboard/modals/CategoryModal';
 import { MenuItemModal } from '@/components/dashboard/modals/MenuItemModal';
@@ -222,6 +223,7 @@ export function DashboardClient({ initialData }: DashboardClientProps) {
           {activeTab === 'orders' && (
             <OrdersTab
               restaurantId={activeRestaurant.id}
+              restaurantName={activeRestaurant.name}
               currency={activeRestaurant.currency}
               onNotify={notify}
             />
@@ -231,6 +233,15 @@ export function DashboardClient({ initialData }: DashboardClientProps) {
             <PaymentsTab
               restaurantId={activeRestaurant.id}
               restaurantSlug={activeRestaurant.slug}
+            />
+          )}
+
+          {activeTab === 'billing' && (
+            <BillingTab
+              restaurantId={activeRestaurant.id}
+              currency={activeRestaurant.currency}
+              userRole={activeRestaurant.role}
+              onNotify={notify}
             />
           )}
         </div>

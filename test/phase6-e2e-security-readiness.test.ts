@@ -88,6 +88,7 @@ describe('Phase 6: Security Audit, Tenant Isolation & Concurrency Guarding', () 
         total: 75000,
         orderStatus: OrderStatus.SERVED,
         paymentStatus: PaymentStatus.UNPAID,
+        paymentMethod: PaymentMethod.COUNTER,
         restaurant: { id: 'rest_a', currency: 'INR' },
       };
 

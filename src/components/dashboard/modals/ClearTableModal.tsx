@@ -11,6 +11,7 @@ import {
   Trash2,
   DollarSign,
   AlertCircle,
+  Banknote,
 } from 'lucide-react';
 import type { RestaurantTableData } from '@/types/dashboard';
 import { formatMoney } from '@/lib/formatters';
@@ -20,6 +21,10 @@ interface SessionOrderSummary {
   orderNumber: string;
   orderStatus: string;
   paymentStatus: string;
+  paymentMethod?: string;
+  displayPaymentStatus?: string;
+  isCashEligible?: boolean;
+  ineligibleReason?: string | null;
   total: number;
   refundStatus: string | null;
   hasFailedRefund?: boolean;
@@ -47,6 +52,8 @@ interface TableSessionSummary {
   canClose: boolean;
   blockingReasons: string[];
   unpaidOrdersCount: number;
+  unpaidTotalAmount?: number;
+  unpaidCashOrdersCount?: number;
   activeOrdersCount: number;
   pendingRefundsCount: number;
   failedRefundsCount?: number;
@@ -79,6 +86,12 @@ export function ClearTableModal({
   const [summary, setSummary] = useState<TableSessionSummary | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  // Cash payment settlement state
+  const [confirmCashOrder, setConfirmCashOrder] = useState<SessionOrderSummary | null>(null);
+  const [settlingOrderId, setSettlingOrderId] = useState<string | null>(null);
+  const [settleSuccessMessage, setSettleSuccessMessage] = useState<string | null>(null);
+  const [settleError, setSettleError] = useState<string | null>(null);
+
   const fetchSummary = useCallback(async () => {
     if (!table || !restaurantId) return;
     setLoading(true);
@@ -103,9 +116,14 @@ export function ClearTableModal({
   useEffect(() => {
     if (isOpen) {
       void fetchSummary();
+      setSettleSuccessMessage(null);
+      setConfirmCashOrder(null);
     } else {
       setSummary(null);
       setError(null);
+      setConfirmCashOrder(null);
+      setSettleSuccessMessage(null);
+      setSettleError(null);
     }
   }, [isOpen, fetchSummary]);
 
@@ -149,12 +167,52 @@ export function ClearTableModal({
     }
   }
 
+  async function handleExecuteCashSettlement() {
+    if (!confirmCashOrder || settlingOrderId) return;
+    setSettlingOrderId(confirmCashOrder.id);
+    setSettleError(null);
+
+    try {
+      const res = await fetch(
+        `/api/v1/restaurants/${restaurantId}/orders/${confirmCashOrder.id}/settle-counter`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            amount: confirmCashOrder.total,
+            expectedSessionId: summary?.session?.id,
+            notes: `Cash payment recorded from Clear Table modal for table ${table?.tableNumber || ''}`,
+          }),
+        },
+      );
+
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.error?.message || 'Failed to record cash payment.');
+      }
+
+      const successMsg = `Cash payment of ${formatMoney(confirmCashOrder.total, currency)} confirmed for order #${confirmCashOrder.orderNumber}.`;
+      setSettleSuccessMessage(successMsg);
+      notify('success', successMsg);
+
+      // Re-fetch session summary to reflect real-time authoritative state and update closure eligibility
+      setConfirmCashOrder(null);
+      await fetchSummary();
+    } catch (err) {
+      const msg = (err as Error).message;
+      setSettleError(msg);
+      notify('error', msg);
+    } finally {
+      setSettlingOrderId(null);
+    }
+  }
+
   const totalSessionAmount =
     summary?.orders.reduce((sum, o) => sum + o.total, 0) || 0;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in">
-      <div className="bg-slate-900 border border-slate-800 rounded-3xl max-w-lg w-full max-h-[90vh] flex flex-col shadow-2xl text-slate-100 overflow-hidden">
+      <div className="bg-slate-900 border border-slate-800 rounded-3xl max-w-lg w-full max-h-[90vh] flex flex-col shadow-2xl text-slate-100 overflow-hidden relative">
         {/* Header */}
         <div className="p-5 border-b border-slate-800 flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -172,7 +230,7 @@ export function ClearTableModal({
           </div>
           <button
             onClick={onClose}
-            disabled={clearing}
+            disabled={clearing || settlingOrderId !== null}
             className="p-1.5 text-slate-400 hover:text-white rounded-lg transition-colors"
           >
             <X className="w-5 h-5" />
@@ -192,6 +250,23 @@ export function ClearTableModal({
             <div className="p-3.5 rounded-2xl bg-rose-950/60 border border-rose-800/80 text-rose-200 text-xs flex items-start gap-2.5">
               <AlertCircle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
               <span>{error}</span>
+            </div>
+          )}
+
+          {/* Settlement Success Message */}
+          {settleSuccessMessage && (
+            <div className="p-3.5 rounded-2xl bg-emerald-950/60 border border-emerald-800/80 text-emerald-200 text-xs flex items-center justify-between gap-2.5 animate-in fade-in">
+              <div className="flex items-center gap-2">
+                <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                <span>{settleSuccessMessage}</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSettleSuccessMessage(null)}
+                className="text-emerald-400 hover:text-emerald-200 p-1"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
             </div>
           )}
 
@@ -228,6 +303,24 @@ export function ClearTableModal({
                 </div>
               </div>
 
+              {/* Unpaid Balance Notice */}
+              {summary.unpaidOrdersCount > 0 && (
+                <div className="p-3 rounded-xl bg-slate-950/60 border border-slate-800 flex items-center justify-between text-xs">
+                  <div className="flex items-center gap-2">
+                    <Banknote className="w-4 h-4 text-amber-400" />
+                    <span className="text-slate-300 font-semibold">Unpaid Balance:</span>
+                  </div>
+                  <div className="text-right">
+                    <span className="font-mono font-bold text-rose-400">
+                      {formatMoney(summary.unpaidTotalAmount ?? 0, currency)}
+                    </span>
+                    <span className="text-[11px] text-slate-400 ml-1.5">
+                      ({summary.unpaidOrdersCount} {summary.unpaidOrdersCount === 1 ? 'order' : 'orders'})
+                    </span>
+                  </div>
+                </div>
+              )}
+
               {/* Failed Online Refund Warning Banner */}
               {summary.hasFailedRefunds && (
                 <div className="p-3.5 rounded-2xl bg-rose-950/70 border border-rose-800 text-rose-200 space-y-1.5">
@@ -254,7 +347,7 @@ export function ClearTableModal({
                     ))}
                   </ul>
                   <p className="text-[11px] text-amber-300/80 pt-1 border-t border-amber-800/60">
-                    All food must be marked served and all payments settled before clearing table.
+                    All food must be marked served and all payments settled before clearing table. Settle cash payments below if received.
                   </p>
                 </div>
               )}
@@ -271,71 +364,121 @@ export function ClearTableModal({
 
               {/* Session Orders List */}
               <div className="space-y-2">
-                <h3 className="text-xs font-bold text-slate-300 uppercase tracking-wider">
-                  Session Orders ({summary.orders.length})
-                </h3>
+                <div className="flex items-center justify-between">
+                  <h3 className="text-xs font-bold text-slate-300 uppercase tracking-wider">
+                    Session Orders ({summary.orders.length})
+                  </h3>
+                  {summary.unpaidCashOrdersCount && summary.unpaidCashOrdersCount > 0 ? (
+                    <span className="text-[11px] text-emerald-400 font-semibold">
+                      {summary.unpaidCashOrdersCount} eligible for cash payment
+                    </span>
+                  ) : null}
+                </div>
 
                 {summary.orders.length === 0 ? (
                   <p className="text-xs text-slate-500 italic py-2">
                     No orders placed in this session.
                   </p>
                 ) : (
-                  <div className="space-y-2 max-h-52 overflow-y-auto pr-1">
+                  <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
                     {summary.orders.map((order) => {
                       const isServed = order.orderStatus === 'SERVED';
                       const isCancelled = order.orderStatus === 'CANCELLED';
-                      const isPaid =
-                        order.paymentStatus === 'PAID' ||
-                        order.paymentStatus === 'PARTIALLY_REFUNDED' ||
-                        order.paymentStatus === 'REFUNDED';
+                      const displayStatus = order.displayPaymentStatus || order.paymentStatus;
+                      const isPaidCash = displayStatus === 'PAID (CASH)';
+                      const isPaidOnline = displayStatus === 'PAID (ONLINE)';
+                      const isRefunded = displayStatus === 'REFUNDED';
+                      const isPartiallyRefunded = displayStatus === 'PARTIALLY REFUNDED';
+                      const isUnpaid = displayStatus === 'UNPAID';
 
                       return (
                         <div
                           key={order.id}
-                          className="p-3 rounded-xl bg-slate-950/80 border border-slate-800/80 flex items-center justify-between text-xs"
+                          className="p-3 rounded-xl bg-slate-950/80 border border-slate-800/80 flex flex-col gap-2 text-xs"
                         >
-                          <div>
-                            <div className="flex items-center gap-2">
-                              <span className="font-mono font-bold text-white">
-                                #{order.orderNumber}
-                              </span>
-                              <span className="text-[11px] text-slate-400">
-                                ({order.itemsCount} {order.itemsCount === 1 ? 'item' : 'items'})
+                          <div className="flex items-center justify-between">
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <span className="font-mono font-bold text-white">
+                                  #{order.orderNumber}
+                                </span>
+                                <span className="text-[11px] text-slate-400">
+                                  ({order.itemsCount} {order.itemsCount === 1 ? 'item' : 'items'})
+                                </span>
+                              </div>
+                              <span className="text-[11px] font-semibold text-emerald-400">
+                                {formatMoney(order.total, currency)}
                               </span>
                             </div>
-                            <span className="text-[11px] font-semibold text-emerald-400">
-                              {formatMoney(order.total, currency)}
-                            </span>
+
+                            {/* Status Badges */}
+                            <div className="flex items-center gap-1.5 flex-wrap justify-end">
+                              {/* Order Status */}
+                              <span
+                                className={`px-2 py-0.5 rounded text-[10px] font-extrabold uppercase border ${
+                                  isServed
+                                    ? 'bg-purple-950/50 text-purple-300 border-purple-800'
+                                    : isCancelled
+                                    ? 'bg-rose-950/50 text-rose-400 border-rose-800'
+                                    : order.orderStatus === 'READY'
+                                    ? 'bg-emerald-950/50 text-emerald-300 border-emerald-800'
+                                    : 'bg-orange-950/50 text-orange-300 border-orange-800'
+                                }`}
+                              >
+                                {order.orderStatus}
+                              </span>
+
+                              {/* Payment Status */}
+                              <span
+                                className={`px-2 py-0.5 rounded text-[10px] font-bold border ${
+                                  isPaidCash
+                                    ? 'bg-emerald-950/50 text-emerald-300 border-emerald-800'
+                                    : isPaidOnline
+                                    ? 'bg-blue-950/50 text-blue-300 border-blue-800'
+                                    : isRefunded || isPartiallyRefunded
+                                    ? 'bg-amber-950/50 text-amber-300 border-amber-800'
+                                    : isUnpaid
+                                    ? 'bg-rose-950/50 text-rose-300 border-rose-800'
+                                    : 'bg-slate-800 text-slate-300 border-slate-700'
+                                }`}
+                              >
+                                {displayStatus}
+                              </span>
+
+                              {order.hasFailedRefund && (
+                                <span className="px-2 py-0.5 rounded text-[10px] font-extrabold uppercase border bg-rose-950/80 text-rose-300 border-rose-700">
+                                  Refund Failed
+                                </span>
+                              )}
+                            </div>
                           </div>
 
-                          <div className="flex items-center gap-1.5">
-                            <span
-                              className={`px-2 py-0.5 rounded text-[10px] font-extrabold uppercase border ${
-                                isServed
-                                  ? 'bg-purple-950/50 text-purple-300 border-purple-800'
-                                  : isCancelled
-                                  ? 'bg-rose-950/50 text-rose-400 border-rose-800'
-                                  : order.orderStatus === 'READY'
-                                  ? 'bg-emerald-950/50 text-emerald-300 border-emerald-800'
-                                  : 'bg-orange-950/50 text-orange-300 border-orange-800'
-                              }`}
-                            >
-                              {order.orderStatus}
-                            </span>
-
-                            <span
-                              className={`px-2 py-0.5 rounded text-[10px] font-bold border ${
-                                isPaid
-                                  ? 'bg-emerald-950/40 text-emerald-400 border-emerald-800/60'
-                                  : 'bg-rose-950/40 text-rose-400 border-rose-800/60'
-                              }`}
-                            >
-                              {order.paymentStatus}
-                            </span>
-
-                            {order.hasFailedRefund && (
-                              <span className="px-2 py-0.5 rounded text-[10px] font-extrabold uppercase border bg-rose-950/80 text-rose-300 border-rose-700">
-                                Refund Failed
+                          {/* Cash Payment Action or Non-eligible Notice */}
+                          <div className="pt-2 border-t border-slate-900 flex items-center justify-between">
+                            {order.isCashEligible ? (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setSettleError(null);
+                                  setConfirmCashOrder(order);
+                                }}
+                                disabled={clearing || settlingOrderId !== null}
+                                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[11px] shadow-sm active:scale-95 transition-all touch-manipulation"
+                              >
+                                <DollarSign className="w-3.5 h-3.5" />
+                                <span>Mark Cash Paid</span>
+                              </button>
+                            ) : order.paymentStatus === 'UNPAID' && order.paymentMethod === 'ONLINE' ? (
+                              <span className="text-[11px] text-blue-400 italic">
+                                Online payment order (customer pays via Razorpay)
+                              </span>
+                            ) : order.paymentStatus === 'UNPAID' && order.ineligibleReason ? (
+                              <span className="text-[11px] text-slate-400 italic">
+                                {order.ineligibleReason}
+                              </span>
+                            ) : (
+                              <span className="text-[11px] text-slate-500">
+                                {isPaidCash ? 'Paid at counter' : isPaidOnline ? 'Paid online' : ''}
                               </span>
                             )}
                           </div>
@@ -353,7 +496,7 @@ export function ClearTableModal({
         <div className="p-4 border-t border-slate-800 bg-slate-950/60 flex items-center justify-end gap-2.5">
           <button
             onClick={onClose}
-            disabled={clearing}
+            disabled={clearing || settlingOrderId !== null}
             className="px-4 py-2.5 rounded-xl border border-slate-800 hover:bg-slate-800 text-slate-300 hover:text-white text-xs font-semibold transition-colors"
           >
             Cancel
@@ -382,8 +525,72 @@ export function ClearTableModal({
             </span>
           </button>
         </div>
+
+        {/* Cash Settlement Confirmation Dialog Overlay */}
+        {confirmCashOrder && (
+          <div className="absolute inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-sm animate-in fade-in">
+            <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-sm w-full p-5 text-slate-100 shadow-2xl space-y-4">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400 shrink-0">
+                  <Banknote className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-white">
+                    Confirm cash received?
+                  </h3>
+                  <p className="text-[11px] text-slate-400">
+                    Record payment at counter
+                  </p>
+                </div>
+              </div>
+
+              <div className="p-3.5 rounded-xl bg-slate-950/80 border border-slate-800 text-xs space-y-1.5">
+                <p className="text-slate-300 leading-relaxed">
+                  Have you received{' '}
+                  <span className="font-mono font-bold text-emerald-400">
+                    {formatMoney(confirmCashOrder.total, currency)}
+                  </span>{' '}
+                  in cash for order{' '}
+                  <span className="font-mono font-bold text-white">
+                    #{confirmCashOrder.orderNumber}
+                  </span>
+                  ?
+                </p>
+              </div>
+
+              {settleError && (
+                <div className="p-2.5 rounded-xl bg-rose-950/60 border border-rose-800 text-rose-200 text-xs">
+                  {settleError}
+                </div>
+              )}
+
+              <div className="flex items-center justify-end gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={() => setConfirmCashOrder(null)}
+                  disabled={settlingOrderId !== null}
+                  className="px-3.5 py-2 rounded-xl border border-slate-800 hover:bg-slate-800 text-slate-300 text-xs font-semibold transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void handleExecuteCashSettlement()}
+                  disabled={settlingOrderId !== null}
+                  className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center gap-1.5 shadow-lg shadow-emerald-600/20 active:scale-95 transition-all"
+                >
+                  {settlingOrderId === confirmCashOrder.id ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  ) : (
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                  )}
+                  <span>Confirm Cash Received</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
 }
-

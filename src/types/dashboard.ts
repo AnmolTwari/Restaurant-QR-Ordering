@@ -6,7 +6,8 @@ export type DashboardTab =
   | 'items'
   | 'tables'
   | 'orders'
-  | 'payments';
+  | 'payments'
+  | 'billing';
 
 export interface RestaurantSummary {
   id: string;

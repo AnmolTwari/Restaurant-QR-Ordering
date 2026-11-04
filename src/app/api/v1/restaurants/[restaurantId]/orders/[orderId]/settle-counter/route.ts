@@ -18,6 +18,7 @@ const SettleCounterSchema = z.object({
   amount: z.number().int().positive({ message: 'Amount must be a positive integer in minor units.' }),
   reference: z.string().max(100).optional(),
   notes: z.string().max(300).optional(),
+  expectedSessionId: z.string().optional(),
 });
 
 export async function POST(req: NextRequest, props: RouteParams) {
@@ -42,6 +43,7 @@ export async function POST(req: NextRequest, props: RouteParams) {
       userId: context.user.id,
       userFullName: context.user.fullName,
       userRole: context.membership.role as UserRole,
+      expectedSessionId: data.expectedSessionId,
       reference: data.reference,
       notes: data.notes,
     });

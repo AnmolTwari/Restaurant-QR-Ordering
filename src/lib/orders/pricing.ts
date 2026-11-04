@@ -1,5 +1,10 @@
 import { prisma } from '@/lib/prisma';
 import type { CreateOrderItemInput } from '@/types/orders';
+import {
+  calculateBilling,
+  getOrCreateRestaurantBillingConfig,
+  type BillingConfigSnapshot,
+} from '@/lib/billing/billing-engine';
 
 export interface CalculatedOrderItem {
   menuItemId: string;
@@ -14,7 +19,16 @@ export interface CalculatedOrderPricing {
   subtotal: number; // in minor units
   tax: number; // in minor units
   total: number; // in minor units
+  cgst: number;
+  sgst: number;
+  igst: number;
+  serviceCharge: number;
+  packagingCharge: number;
+  customCharge: number;
+  discountAmount: number;
+  taxableAmount: number;
   items: CalculatedOrderItem[];
+  billingSnapshot: BillingConfigSnapshot;
 }
 
 export class OrderPricingValidationError extends Error {
@@ -29,12 +43,20 @@ export class OrderPricingValidationError extends Error {
 
 /**
  * Validates requested order items against current database records for the specified restaurant,
- * enforces item availability and positive quantities, and calculates the exact server-side pricing.
+ * enforces item availability and positive quantities, and calculates the exact server-side pricing
+ * including GST, additional charges, and discounts using the centralized billing engine.
  * Never trusts any client-provided price or total.
  */
 export async function calculateOrderPricing(
   restaurantId: string,
   requestedItems: CreateOrderItemInput[],
+  options?: {
+    discount?: {
+      type: 'PERCENTAGE' | 'FIXED';
+      value: number;
+    } | null;
+    customerState?: string | null;
+  },
 ): Promise<CalculatedOrderPricing> {
   if (!requestedItems || requestedItems.length === 0) {
     throw new OrderPricingValidationError(
@@ -93,7 +115,6 @@ export async function calculateOrderPricing(
     }
   }
 
-  let subtotal = 0;
   const items: CalculatedOrderItem[] = [];
 
   for (const reqItem of requestedItems) {
@@ -107,8 +128,6 @@ export async function calculateOrderPricing(
       );
     }
 
-    subtotal += itemTotal;
-
     items.push({
       menuItemId: dbItem.id,
       nameSnapshot: dbItem.name,
@@ -119,14 +138,37 @@ export async function calculateOrderPricing(
     });
   }
 
-  // Tax calculation (can be extended with restaurant tax rate, defaults to 0 if not configured)
-  const tax = 0;
-  const total = subtotal + tax;
+  // Fetch restaurant billing configuration
+  const billingConfig = await getOrCreateRestaurantBillingConfig(restaurantId);
+
+  // Run centralized billing calculation
+  const billingResult = calculateBilling({
+    items: items.map((i) => ({
+      menuItemId: i.menuItemId,
+      nameSnapshot: i.nameSnapshot,
+      priceSnapshot: i.priceSnapshot,
+      quantity: i.quantity,
+      totalPrice: i.totalPrice,
+      notes: i.notes,
+    })),
+    config: billingConfig,
+    discount: options?.discount,
+    customerState: options?.customerState,
+  });
 
   return {
-    subtotal,
-    tax,
-    total,
+    subtotal: billingResult.itemsSubtotal,
+    tax: billingResult.totalTax,
+    total: billingResult.totalPayable,
+    cgst: billingResult.cgst,
+    sgst: billingResult.sgst,
+    igst: billingResult.igst,
+    serviceCharge: billingResult.serviceCharge,
+    packagingCharge: billingResult.packagingCharge,
+    customCharge: billingResult.customCharge,
+    discountAmount: billingResult.discountAmount,
+    taxableAmount: billingResult.taxableAmount,
     items,
+    billingSnapshot: billingResult.snapshot,
   };
 }

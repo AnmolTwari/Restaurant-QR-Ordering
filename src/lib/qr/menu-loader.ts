@@ -4,12 +4,17 @@ import {
   resolveOrCreateTableSession,
   verifyActiveTableSession,
   getTableSessionTokenFromCookies,
+  TableSessionOccupiedError,
 } from '@/lib/qr/session';
 import type { PublicMenuData } from '@/types/public-menu';
 
 export type LoadPublicMenuResult =
   | { success: true; data: PublicMenuData }
-  | { success: false; error: string; code: 'MISSING_PARAMS' | 'INVALID_QR_TOKEN' | 'SERVER_ERROR' };
+  | {
+      success: false;
+      error: string;
+      code: 'MISSING_PARAMS' | 'INVALID_QR_TOKEN' | 'TABLE_OCCUPIED' | 'SERVER_ERROR';
+    };
 
 /**
  * Server-side loader for restaurant public menu and table session.
@@ -94,11 +99,16 @@ export async function loadPublicMenuData(
     });
 
     // 3. Resolve or create dining table session
-    const sessionResult = await resolveOrCreateTableSession(
-      restaurant.id,
-      table.id,
-      existingSessionToken,
-    );
+    const [sessionResult, billingConfig] = await Promise.all([
+      resolveOrCreateTableSession(
+        restaurant.id,
+        table.id,
+        existingSessionToken,
+      ),
+      prisma.restaurantBillingConfig.findUnique({
+        where: { restaurantId: restaurant.id },
+      }),
+    ]);
 
     const data: PublicMenuData = {
       restaurant: {
@@ -108,6 +118,18 @@ export async function loadPublicMenuData(
         address: restaurant.address,
         phone: restaurant.phone,
         currency: restaurant.currency,
+        billingConfig: billingConfig
+          ? {
+              gstEnabled: billingConfig.gstEnabled,
+              taxInclusive: billingConfig.taxInclusive,
+              gstRate: billingConfig.gstRate,
+              serviceChargeEnabled: billingConfig.serviceChargeEnabled,
+              serviceChargeRate: billingConfig.serviceChargeRate,
+              serviceChargeType: billingConfig.serviceChargeType as 'PERCENTAGE' | 'FIXED',
+              packagingChargeEnabled: billingConfig.packagingChargeEnabled,
+              packagingChargeAmount: billingConfig.packagingChargeAmount,
+            }
+          : undefined,
       },
       table: {
         id: table.id,
@@ -129,6 +151,13 @@ export async function loadPublicMenuData(
 
     return { success: true, data };
   } catch (error) {
+    if (error instanceof TableSessionOccupiedError) {
+      return {
+        success: false,
+        error: error.message,
+        code: 'TABLE_OCCUPIED',
+      };
+    }
     const message = error instanceof Error ? error.message : 'Server error';
     return { success: false, error: message, code: 'SERVER_ERROR' };
   }

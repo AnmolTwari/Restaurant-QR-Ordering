@@ -17,7 +17,7 @@ export interface SessionResult {
 export class TableSessionOccupiedError extends Error {
   constructor(
     public readonly code: string = 'TABLE_OCCUPIED',
-    message: string = 'This table currently has an active dining session. Please ask staff to clear the table or assist you.',
+    message: string = 'This table is currently in use. Please ask a team member for assistance.',
     public readonly statusCode: number = 409,
   ) {
     super(message);
@@ -124,7 +124,7 @@ export async function resolveOrCreateTableSession(
   if (activeTableSession) {
     throw new TableSessionOccupiedError(
       'TABLE_OCCUPIED',
-      'This table currently has an active dining session. If you are starting a new visit, please ask staff to clear the table.',
+      'This table is currently in use. Please ask a team member for assistance.',
       409,
     );
   }
@@ -185,7 +185,7 @@ export async function resolveOrCreateTableSession(
       if (winningSession) {
         throw new TableSessionOccupiedError(
           'TABLE_OCCUPIED',
-          'This table currently has an active dining session. If you are starting a new visit, please ask staff to clear the table.',
+          'This table is currently in use. Please ask a team member for assistance.',
           409,
         );
       }
@@ -545,6 +545,8 @@ export async function getTableActiveSessionSummary(
       canClose: true,
       blockingReasons: [],
       unpaidOrdersCount: 0,
+      unpaidTotalAmount: 0,
+      unpaidCashOrdersCount: 0,
       activeOrdersCount: 0,
       pendingRefundsCount: 0,
       failedRefundsCount: 0,
@@ -556,6 +558,8 @@ export async function getTableActiveSessionSummary(
 
   const blockingReasons: string[] = [];
   let unpaidCount = 0;
+  let unpaidTotal = 0;
+  let unpaidCashCount = 0;
   let activeOrdersCount = 0;
   let pendingRefundsCount = 0;
   let failedRefundsCount = 0;
@@ -584,7 +588,56 @@ export async function getTableActiveSessionSummary(
 
     if (requiresPayment && !isPaid) {
       unpaidCount++;
+      unpaidTotal += o.total;
       blockingReasons.push(`Order #${o.orderNumber} is unpaid.`);
+    }
+
+    // Determine clear display payment status
+    let displayPaymentStatus = o.paymentStatus as string;
+    if (o.paymentStatus === 'REFUNDED') {
+      displayPaymentStatus = 'REFUNDED';
+    } else if (o.paymentStatus === 'PARTIALLY_REFUNDED') {
+      displayPaymentStatus = 'PARTIALLY REFUNDED';
+    } else if (o.paymentStatus === 'PAID') {
+      const hasOnlinePaid = o.payments?.some(
+        (p) => p.method === 'ONLINE' && p.status === 'PAID',
+      );
+      if (o.paymentMethod === 'ONLINE' || hasOnlinePaid) {
+        displayPaymentStatus = 'PAID (ONLINE)';
+      } else {
+        displayPaymentStatus = 'PAID (CASH)';
+      }
+    } else if (o.paymentStatus === 'UNPAID') {
+      displayPaymentStatus = 'UNPAID';
+    }
+
+    // Payment method restrictions for cash settlement:
+    // Only allow for genuinely eligible cash/counter orders.
+    const hasOnlinePending = o.payments?.some(
+      (p) => p.method === 'ONLINE' && p.status === 'PENDING',
+    );
+    const isAmbiguousMethod = !o.paymentMethod || typeof o.paymentMethod !== 'string';
+
+    let isCashEligible = false;
+    let ineligibleReason: string | null = null;
+
+    if (isPaid) {
+      ineligibleReason = null;
+    } else if (o.orderStatus === 'CANCELLED') {
+      ineligibleReason = 'Order is cancelled';
+    } else if (o.total <= 0) {
+      ineligibleReason = 'Zero balance';
+    } else if (isAmbiguousMethod) {
+      ineligibleReason = 'Payment method is missing or ambiguous';
+    } else if (hasOnlinePending) {
+      ineligibleReason = 'Online payment is currently pending';
+    } else if (o.paymentMethod === 'ONLINE') {
+      ineligibleReason = 'Online payment order cannot be settled as cash';
+    } else if (o.paymentMethod === 'COUNTER') {
+      isCashEligible = true;
+      unpaidCashCount++;
+    } else {
+      ineligibleReason = `Ineligible payment method: ${o.paymentMethod}`;
     }
 
     const pendingRefundAmount = o.refundAmount - o.refundedAtCounterAmount;
@@ -609,6 +662,10 @@ export async function getTableActiveSessionSummary(
       orderNumber: o.orderNumber,
       orderStatus: o.orderStatus,
       paymentStatus: o.paymentStatus,
+      paymentMethod: o.paymentMethod,
+      displayPaymentStatus,
+      isCashEligible,
+      ineligibleReason,
       total: o.total,
       refundStatus: o.refundStatus,
       hasFailedRefund: failedOnline.length > 0,
@@ -646,6 +703,8 @@ export async function getTableActiveSessionSummary(
     canClose: blockingReasons.length === 0,
     blockingReasons,
     unpaidOrdersCount: unpaidCount,
+    unpaidTotalAmount: unpaidTotal,
+    unpaidCashOrdersCount: unpaidCashCount,
     activeOrdersCount,
     pendingRefundsCount,
     failedRefundsCount,

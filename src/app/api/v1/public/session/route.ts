@@ -17,6 +17,7 @@ export const dynamic = 'force-dynamic';
 const SessionRequestSchema = z.object({
   restaurantSlug: z.string().min(1).trim(),
   tableToken: z.string().min(10).optional(),
+  sessionToken: z.string().optional(),
 });
 
 /**
@@ -33,7 +34,7 @@ export async function POST(req: NextRequest) {
     }
 
     const body = await req.json();
-    const { restaurantSlug, tableToken } = SessionRequestSchema.parse(body);
+    const { restaurantSlug, tableToken, sessionToken } = SessionRequestSchema.parse(body);
     const normalizedSlug = restaurantSlug.toLowerCase().trim();
 
     if (tableToken) {
@@ -71,10 +72,11 @@ export async function POST(req: NextRequest) {
       const existingCookieToken =
         req.cookies.get(TABLE_SESSION_COOKIE_NAME)?.value ||
         (await getTableSessionTokenFromCookies());
+      const candidateToken = sessionToken || existingCookieToken;
       const sessionResult = await resolveOrCreateTableSession(
         resolved.restaurant.id,
         resolved.table.id,
-        existingCookieToken,
+        candidateToken,
       );
 
       const response = apiSuccess({
@@ -96,6 +98,7 @@ export async function POST(req: NextRequest) {
     // Fallback: Verify existing cookie or header-based active session
     const headerToken =
       req.headers.get('x-session-token') ||
+      sessionToken ||
       req.cookies.get(TABLE_SESSION_COOKIE_NAME)?.value ||
       undefined;
     const verified = await verifyActiveTableSession(headerToken);

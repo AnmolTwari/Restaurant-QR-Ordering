@@ -44,7 +44,8 @@ export function PublicMenuClient({
     sessionError,
     setSessionReady,
     setSessionError,
-  } = useDiningSession(slug, tableToken);
+    refreshSession,
+  } = useDiningSession(slug, tableToken, data.session?.sessionToken);
 
   // Poll or count orders once session is established
   useEffect(() => {
@@ -158,7 +159,7 @@ export function PublicMenuClient({
     : null;
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 pb-28 selection:bg-orange-500 selection:text-white">
+    <div className="min-h-screen bg-slate-950 text-slate-100 pb-32 sm:pb-36 selection:bg-orange-500 selection:text-white">
       {/* Restaurant & Table Header */}
       <MenuHeader
         restaurant={data.restaurant}
@@ -169,20 +170,25 @@ export function PublicMenuClient({
 
       {/* Session Error Alert Banner */}
       {!sessionVerifying && !sessionReady && (
-        <div className="max-w-2xl mx-auto px-4 pt-4">
-          <div className="p-4 rounded-2xl bg-amber-950/60 border border-amber-800/60 text-amber-200 flex items-start gap-3">
+        <div className="max-w-2xl mx-auto px-3 sm:px-4 pt-3 sm:pt-4">
+          <div className="p-3.5 sm:p-4 rounded-2xl bg-amber-950/70 border border-amber-800/60 text-amber-200 flex items-start gap-3 shadow-lg">
             <AlertTriangle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
             <div className="flex-1 text-xs">
-              <p className="font-semibold text-amber-100">Table Session Required</p>
-              <p className="mt-0.5 text-amber-300/80">
+              <p className="font-bold text-amber-100 text-xs sm:text-sm">
+                {sessionError?.toLowerCase().includes('in use')
+                  ? 'Table Notice'
+                  : 'Table Session Notice'}
+              </p>
+              <p className="mt-0.5 text-amber-300/90 leading-relaxed">
                 {sessionError ||
-                  'Your table session could not be verified. Please scan your table QR code to enable ordering.'}
+                  'Your table session could not be established. Please scan your table QR code to enable ordering.'}
               </p>
             </div>
             <button
-              onClick={() => window.location.reload()}
-              className="p-1.5 rounded-lg bg-amber-900/60 hover:bg-amber-900 text-amber-200 text-xs flex items-center gap-1 shrink-0"
-              title="Retry verification"
+              type="button"
+              onClick={() => refreshSession()}
+              className="min-h-[34px] px-2.5 py-1.5 rounded-xl bg-amber-900/80 hover:bg-amber-800 text-amber-100 text-xs font-semibold flex items-center gap-1.5 shrink-0 transition-all active:scale-95 touch-manipulation"
+              title="Retry session connection"
             >
               <RefreshCw className="w-3.5 h-3.5" />
               <span>Retry</span>
@@ -202,9 +208,9 @@ export function PublicMenuClient({
       />
 
       {/* Menu Item Cards */}
-      <main className="max-w-2xl mx-auto px-4 py-6">
+      <main className="max-w-2xl mx-auto px-3 sm:px-4 py-4 sm:py-6">
         {filteredItems.length === 0 ? (
-          <div className="glass-panel rounded-2xl p-12 text-center border border-slate-800 my-8">
+          <div className="glass-panel rounded-2xl p-8 sm:p-12 text-center border border-slate-800 my-6">
             <UtensilsCrossed className="w-10 h-10 text-slate-600 mx-auto mb-3" />
             <h3 className="text-base font-semibold text-white mb-1">No items found</h3>
             <p className="text-xs text-slate-400">
@@ -214,7 +220,7 @@ export function PublicMenuClient({
             </p>
           </div>
         ) : (
-          <div className="space-y-4">
+          <div className="space-y-3 sm:space-y-4">
             {filteredItems.map((item) => {
               const inCart = cart.items.find((i) => i.menuItemId === item.id);
               return (
@@ -231,16 +237,17 @@ export function PublicMenuClient({
         )}
       </main>
 
-      {/* Floating Bottom Cart Bar */}
+      {/* Floating Bottom Cart Bar (Thumb-friendly & mobile-safe) */}
       {cart.totalCount > 0 && (
-        <div className="fixed bottom-0 inset-x-0 z-30 p-3 sm:p-4 bg-gradient-to-t from-slate-950 via-slate-950/95 to-transparent">
+        <div className="fixed bottom-0 inset-x-0 z-30 p-3 sm:p-4 bg-gradient-to-t from-slate-950 via-slate-950/95 to-transparent pb-[max(0.75rem,env(safe-area-inset-bottom))]">
           <div className="max-w-md mx-auto">
             <button
+              type="button"
               onClick={() => setIsCartOpen(true)}
-              className="w-full py-3.5 px-5 rounded-2xl bg-orange-600 hover:bg-orange-500 text-white font-bold text-sm shadow-2xl shadow-orange-600/40 flex items-center justify-between transition-all transform active:scale-95"
+              className="w-full min-h-[50px] sm:min-h-[54px] py-3.5 px-4 sm:px-5 rounded-2xl bg-orange-600 hover:bg-orange-500 text-white font-bold text-sm shadow-2xl shadow-orange-600/40 flex items-center justify-between transition-all transform active:scale-[0.98] touch-manipulation"
             >
               <div className="flex items-center gap-2.5">
-                <div className="w-7 h-7 rounded-lg bg-black/20 flex items-center justify-center">
+                <div className="w-7 h-7 rounded-lg bg-black/20 flex items-center justify-center shrink-0">
                   <ShoppingBag className="w-4 h-4 text-white" />
                 </div>
                 <span>View Cart ({cart.totalCount})</span>
@@ -264,6 +271,7 @@ export function PublicMenuClient({
         orderNotes={cart.orderNotes}
         currency={data.restaurant.currency}
         subtotal={cart.subtotal}
+        billingConfig={data.restaurant.billingConfig}
         submitting={submittingOrder}
         disabledReason={disabledReason}
         onClose={() => setIsCartOpen(false)}

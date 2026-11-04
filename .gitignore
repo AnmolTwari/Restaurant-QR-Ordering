@@ -4,11 +4,12 @@ node_modules/
 .pnp
 .pnp.js
 
-# Build outputs
+# Build outputs & deployment
 dist/
 build/
 out/
 .next/
+.vercel/
 
 # Logs
 logs/
@@ -28,6 +29,7 @@ lerna-debug.log*
 *.env
 !*.env.example
 !.env.example
+*.pem
 
 # OS / Editor
 .DS_Store

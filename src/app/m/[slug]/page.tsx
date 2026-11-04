@@ -24,7 +24,7 @@ export default async function PublicMenuPage(props: PublicMenuPageProps) {
   const result = await loadPublicMenuData(params.slug, tableToken);
 
   if (!result.success) {
-    return <MenuErrorState error={result.error} />;
+    return <MenuErrorState error={result.error} code={result.code} />;
   }
 
   return (

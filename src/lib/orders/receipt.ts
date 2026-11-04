@@ -9,9 +9,15 @@ export interface ReceiptData {
     slug: string;
     phone: string | null;
     address: string | null;
+    legalName?: string | null;
+    gstin?: string | null;
+    state?: string | null;
+    stateCode?: string | null;
   };
   order: {
     orderNumber: string;
+    invoiceNumber?: string | null;
+    invoiceDate?: string | null;
     createdAt: string;
     orderStatus: string;
     paymentStatus: string;
@@ -37,8 +43,17 @@ export interface ReceiptData {
   }>;
   pricing: {
     subtotal: number;
+    discountAmount: number;
+    taxableAmount: number;
+    cgst: number;
+    sgst: number;
+    igst: number;
     tax: number;
+    serviceCharge: number;
+    packagingCharge: number;
+    customCharge: number;
     total: number;
+    isTaxInclusive: boolean;
     currency: string;
   };
   receiptToken?: string;
@@ -81,8 +96,10 @@ export async function getReceiptData(
             phone: true,
             address: true,
             currency: true,
+            billingConfig: true,
           },
         },
+        invoice: true,
         table: {
           select: {
             id: true,
@@ -173,16 +190,30 @@ export async function getReceiptData(
     }
 
     const latestPayment = order.payments[0] || null;
+    const config = order.restaurant.billingConfig;
+    const snapshot = (order.billingSnapshot || order.invoice?.billingSnapshot) as Record<string, unknown> | null;
+
+    const legalName = (snapshot?.legalName as string) || config?.legalName || order.restaurant.name;
+    const displayName = (snapshot?.displayName as string) || config?.displayName || order.restaurant.name;
+    const gstin = (snapshot?.gstin as string) || config?.gstin || null;
+    const state = (snapshot?.state as string) || config?.state || null;
+    const stateCode = (snapshot?.stateCode as string) || config?.stateCode || null;
 
     const receipt: ReceiptData = {
       restaurant: {
-        name: order.restaurant.name,
+        name: displayName,
         slug: order.restaurant.slug,
         phone: order.restaurant.phone,
         address: order.restaurant.address,
+        legalName,
+        gstin,
+        state,
+        stateCode,
       },
       order: {
         orderNumber: order.orderNumber,
+        invoiceNumber: order.invoice?.invoiceNumber || order.invoiceNumber || null,
+        invoiceDate: order.invoice?.generatedAt ? order.invoice.generatedAt.toISOString() : null,
         createdAt: order.createdAt.toISOString(),
         orderStatus: order.orderStatus,
         paymentStatus: order.paymentStatus,
@@ -210,13 +241,23 @@ export async function getReceiptData(
       })),
       pricing: {
         subtotal: order.subtotal,
+        discountAmount: order.discountAmount,
+        taxableAmount: order.taxableAmount,
+        cgst: order.cgst,
+        sgst: order.sgst,
+        igst: order.igst,
         tax: order.tax,
+        serviceCharge: order.serviceCharge,
+        packagingCharge: order.packagingCharge,
+        customCharge: order.customCharge,
         total: order.total,
+        isTaxInclusive: Boolean(snapshot?.taxInclusive || config?.taxInclusive),
         currency: order.restaurant.currency || 'INR',
       },
       receiptToken: await createReceiptToken(order.orderNumber, order.restaurantId),
-      disclaimer:
-        'This receipt is a customer proof of payment and order summary. It is not a tax invoice under GST unless explicitly verified with GSTIN and tax breakdown.',
+      disclaimer: gstin
+        ? 'Tax Invoice issued in accordance with applicable Goods and Services Tax (GST) rules.'
+        : 'This bill is a customer proof of payment and order summary. Not a tax invoice under GST.',
     };
 
     return { success: true, receipt };

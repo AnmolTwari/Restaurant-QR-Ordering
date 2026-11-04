@@ -9,11 +9,17 @@ import { OrdersTable } from '@/components/dashboard/orders/OrdersTable';
 
 interface OrdersTabProps {
   restaurantId: string;
+  restaurantName?: string;
   currency?: string;
   onNotify: (type: 'success' | 'error', message: string) => void;
 }
 
-export function OrdersTab({ restaurantId, currency = 'INR', onNotify }: OrdersTabProps) {
+export function OrdersTab({
+  restaurantId,
+  restaurantName,
+  currency = 'INR',
+  onNotify,
+}: OrdersTabProps) {
   const [orders, setOrders] = useState<StaffOrderDetails[]>([]);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
@@ -193,6 +199,7 @@ export function OrdersTab({ restaurantId, currency = 'INR', onNotify }: OrdersTa
         isOpen={!!selectedOrder}
         order={selectedOrder}
         currency={currency}
+        restaurantName={restaurantName}
         actionLoading={actionLoading}
         onClose={() => setSelectedOrder(null)}
         onUpdateStatus={handleUpdateStatus}

@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import {
   resolveOrCreateTableSession,
@@ -7,6 +8,7 @@ import {
   getTableActiveSessionSummary,
   TableSessionClosureError,
   TableSessionOccupiedError,
+  TABLE_SESSION_COOKIE_NAME,
 } from '@/lib/qr/session';
 import {
   listSessionOrders,
@@ -16,6 +18,8 @@ import {
 import { getReceiptData } from '@/lib/orders/receipt';
 import { createReceiptToken } from '@/lib/orders/receipt-token';
 import { createTableQrToken } from '@/lib/qr/token';
+import { POST as handleSessionPost } from '@/app/api/v1/public/session/route';
+import { loadPublicMenuData } from '@/lib/qr/menu-loader';
 import {
   UserRole,
   OrderStatus,
@@ -847,6 +851,151 @@ describe('Table Dining Session Lifecycle & Order Isolation Integration', () => {
     });
     expect(sessionInDb.isActive).toBe(true);
     expect(sessionInDb.status).toBe('ACTIVE');
+  });
+
+  it('19. Cleared table scan: Presenting a closed session token on an available cleared table cleanly establishes a brand-new active session', async () => {
+    const tableClear = await prisma.restaurantTable.create({
+      data: {
+        restaurantId,
+        tableNumber: `T-CLEAR-${timestamp.toString().slice(-4)}`,
+        status: TableStatus.AVAILABLE,
+      },
+    });
+
+    // 1. Initial guest creates session 1
+    const initialSession = await resolveOrCreateTableSession(restaurantId, tableClear.id);
+    expect(initialSession.session.status).toBe('ACTIVE');
+
+    // 2. Staff clears table (closes session 1)
+    await closeTableSession({
+      restaurantId,
+      tableId: tableClear.id,
+      expectedSessionId: initialSession.session.id,
+      closedByUserId: ownerUserId,
+    });
+
+    const tableAfterClear = await prisma.restaurantTable.findUniqueOrThrow({
+      where: { id: tableClear.id },
+    });
+    expect(tableAfterClear.status).toBe(TableStatus.AVAILABLE);
+
+    // 3. Customer browser sends the stale closed session token when scanning the QR code
+    const newVisitResult = await resolveOrCreateTableSession(
+      restaurantId,
+      tableClear.id,
+      initialSession.sessionToken,
+    );
+
+    // Must successfully create a new session rather than throwing TABLE_OCCUPIED
+    expect(newVisitResult.isNew).toBe(true);
+    expect(newVisitResult.session.id).not.toBe(initialSession.session.id);
+    expect(newVisitResult.session.status).toBe('ACTIVE');
+    expect(newVisitResult.session.isActive).toBe(true);
+
+    // Table is now occupied by the new session
+    const tableOccupied = await prisma.restaurantTable.findUniqueOrThrow({
+      where: { id: tableClear.id },
+    });
+    expect(tableOccupied.status).toBe(TableStatus.OCCUPIED);
+  });
+
+  it('20. POST /api/v1/public/session establishes session from SSR candidate sessionToken and sets HttpOnly cookie', async () => {
+    const tablePost = await prisma.restaurantTable.create({
+      data: {
+        restaurantId,
+        tableNumber: `T-POST-${timestamp.toString().slice(-4)}`,
+        status: TableStatus.AVAILABLE,
+      },
+    });
+    const qrResult = await createTableQrToken(restaurantId, tablePost.id);
+
+    // SSR creates session candidate
+    const ssrSession = await resolveOrCreateTableSession(restaurantId, tablePost.id);
+
+    // Client useDiningSession sends sessionToken to POST /api/v1/public/session
+    const req = new NextRequest('http://localhost:3000/api/v1/public/session', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        restaurantSlug,
+        tableToken: qrResult.rawToken,
+        sessionToken: ssrSession.sessionToken,
+      }),
+    });
+
+    const res = await handleSessionPost(req);
+    expect(res.status).toBe(200);
+
+    const json = await res.json();
+    expect(json.success).toBe(true);
+    expect(json.data.valid).toBe(true);
+    expect(json.data.tableId).toBe(tablePost.id);
+
+    // Cookie must be attached
+    const setCookie = res.headers.get('set-cookie');
+    expect(setCookie).toContain(TABLE_SESSION_COOKIE_NAME);
+    expect(setCookie).toContain(ssrSession.sessionToken);
+  });
+
+  it('21. Occupied table: Another customer scanning QR code of an actively occupied table receives friendly TABLE_OCCUPIED (409) message', async () => {
+    const tableOcc = await prisma.restaurantTable.create({
+      data: {
+        restaurantId,
+        tableNumber: `T-OCC-${timestamp.toString().slice(-4)}`,
+        status: TableStatus.AVAILABLE,
+      },
+    });
+    const qrResult = await createTableQrToken(restaurantId, tableOcc.id);
+
+    // Party 1 is dining
+    const party1Session = await resolveOrCreateTableSession(restaurantId, tableOcc.id);
+    expect(party1Session.session.status).toBe('ACTIVE');
+
+    // Party 2 scans table without Party 1's token
+    const req = new NextRequest('http://localhost:3000/api/v1/public/session', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        restaurantSlug,
+        tableToken: qrResult.rawToken,
+      }),
+    });
+
+    const res = await handleSessionPost(req);
+    expect(res.status).toBe(409);
+
+    const json = await res.json();
+    expect(json.success).toBe(false);
+    expect(json.error.code).toBe('TABLE_OCCUPIED');
+    expect(json.error.message).toBe(
+      'This table is currently in use. Please ask a team member for assistance.',
+    );
+    // Internal tokens must NOT leak
+    expect(JSON.stringify(json)).not.toContain(party1Session.sessionToken);
+  });
+
+  it('22. loadPublicMenuData loader maps TABLE_OCCUPIED to friendly error payload with code TABLE_OCCUPIED', async () => {
+    const tableLoader = await prisma.restaurantTable.create({
+      data: {
+        restaurantId,
+        tableNumber: `T-LOAD-${timestamp.toString().slice(-4)}`,
+        status: TableStatus.AVAILABLE,
+      },
+    });
+    const qrResult = await createTableQrToken(restaurantId, tableLoader.id);
+
+    // Table has active session
+    await resolveOrCreateTableSession(restaurantId, tableLoader.id);
+
+    // Server-side loader called without matching session cookie
+    const loaderResult = await loadPublicMenuData(restaurantSlug, qrResult.rawToken);
+    expect(loaderResult.success).toBe(false);
+    if (!loaderResult.success) {
+      expect(loaderResult.code).toBe('TABLE_OCCUPIED');
+      expect(loaderResult.error).toBe(
+        'This table is currently in use. Please ask a team member for assistance.',
+      );
+    }
   });
 });
 

@@ -174,6 +174,7 @@ describe('Phase 5: Counter Settlement & Role Authorization', () => {
       total: 50000, // 500.00 in minor units
       orderStatus: OrderStatus.SERVED,
       paymentStatus: PaymentStatus.UNPAID,
+      paymentMethod: PaymentMethod.COUNTER,
       restaurant: { id: 'rest_1', currency: 'INR' },
     };
 
@@ -274,6 +275,112 @@ describe('Phase 5: Counter Settlement & Role Authorization', () => {
     ).rejects.toThrow('Cannot settle payment for a cancelled order');
   });
 
+  it('should reject counter settlement for an ONLINE order (INELIGIBLE_PAYMENT_METHOD)', async () => {
+    const mockOrder = {
+      id: 'order_online',
+      orderNumber: 'ORD-261027-ON01',
+      restaurantId: 'rest_1',
+      total: 35000,
+      orderStatus: OrderStatus.SERVED,
+      paymentStatus: PaymentStatus.UNPAID,
+      paymentMethod: PaymentMethod.ONLINE,
+      restaurant: { id: 'rest_1', currency: 'INR' },
+    };
+
+    vi.spyOn(prisma, '$transaction').mockImplementation(async (cb: any) => {
+      const mockTx = {
+        order: {
+          findUnique: vi.fn().mockResolvedValue(mockOrder),
+        },
+      };
+      return await cb(mockTx);
+    });
+
+    await expect(
+      settleCounterPayment({
+        restaurantId: 'rest_1',
+        orderId: 'order_online',
+        amount: 35000,
+        userId: 'user_cashier',
+        userFullName: 'Cashier Jane',
+        userRole: UserRole.CASHIER,
+      }),
+    ).rejects.toThrow('was placed for online payment and cannot be settled as cash');
+  });
+
+  it('should reject counter settlement if payment method is ambiguous or missing (AMBIGUOUS_PAYMENT_METHOD)', async () => {
+    const mockOrder = {
+      id: 'order_ambiguous',
+      orderNumber: 'ORD-261027-AMB01',
+      restaurantId: 'rest_1',
+      total: 35000,
+      orderStatus: OrderStatus.SERVED,
+      paymentStatus: PaymentStatus.UNPAID,
+      paymentMethod: undefined,
+      restaurant: { id: 'rest_1', currency: 'INR' },
+    };
+
+    vi.spyOn(prisma, '$transaction').mockImplementation(async (cb: any) => {
+      const mockTx = {
+        order: {
+          findUnique: vi.fn().mockResolvedValue(mockOrder),
+        },
+      };
+      return await cb(mockTx);
+    });
+
+    await expect(
+      settleCounterPayment({
+        restaurantId: 'rest_1',
+        orderId: 'order_ambiguous',
+        amount: 35000,
+        userId: 'user_cashier',
+        userFullName: 'Cashier Jane',
+        userRole: UserRole.CASHIER,
+      }),
+    ).rejects.toThrow('Payment method is missing or ambiguous');
+  });
+
+  it('should reject counter settlement if an online payment attempt is currently pending (ONLINE_PAYMENT_PENDING)', async () => {
+    const mockOrder = {
+      id: 'order_pending_online',
+      orderNumber: 'ORD-261027-PEND01',
+      restaurantId: 'rest_1',
+      total: 35000,
+      orderStatus: OrderStatus.SERVED,
+      paymentStatus: PaymentStatus.UNPAID,
+      paymentMethod: PaymentMethod.COUNTER,
+      restaurant: { id: 'rest_1', currency: 'INR' },
+      payments: [
+        {
+          id: 'pay_pending_1',
+          method: PaymentMethod.ONLINE,
+          status: PaymentStatus.PENDING,
+        },
+      ],
+    };
+
+    vi.spyOn(prisma, '$transaction').mockImplementation(async (cb: any) => {
+      const mockTx = {
+        order: {
+          findUnique: vi.fn().mockResolvedValue(mockOrder),
+        },
+      };
+      return await cb(mockTx);
+    });
+
+    await expect(
+      settleCounterPayment({
+        restaurantId: 'rest_1',
+        orderId: 'order_pending_online',
+        amount: 35000,
+        userId: 'user_cashier',
+        userFullName: 'Cashier Jane',
+        userRole: UserRole.CASHIER,
+      }),
+    ).rejects.toThrow('has an active online payment pending');
+  });
+
   it('should settle valid counter payment and record audit event with staff member', async () => {
     const mockOrder = {
       id: 'order_valid',
@@ -282,6 +389,7 @@ describe('Phase 5: Counter Settlement & Role Authorization', () => {
       total: 42000,
       orderStatus: OrderStatus.READY,
       paymentStatus: PaymentStatus.UNPAID,
+      paymentMethod: PaymentMethod.COUNTER,
       restaurant: { id: 'rest_1', currency: 'INR' },
     };
 
